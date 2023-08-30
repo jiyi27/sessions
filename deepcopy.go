@@ -1,16 +1,16 @@
 package sessions
 
-type CopyableMap map[string]interface{}
+type CopyableMap map[interface{}]interface{}
 type CopyableSlice []interface{}
 
 // DeepCopy will create a deep copy of this map.
 // Both maps and slices will be considered when making the copy.
-func (m CopyableMap) DeepCopy() map[string]interface{} {
-	result := map[string]interface{}{}
+func (m CopyableMap) DeepCopy() map[interface{}]interface{} {
+	result := map[interface{}]interface{}{}
 
 	for k, v := range m {
 		// Handle maps
-		mapValue, isMap := v.(map[string]interface{})
+		mapValue, isMap := v.(map[interface{}]interface{})
 		if isMap {
 			result[k] = CopyableMap(mapValue).DeepCopy()
 			continue
@@ -36,7 +36,7 @@ func (s CopyableSlice) DeepCopy() []interface{} {
 
 	for _, v := range s {
 		// Handle maps
-		mapValue, isMap := v.(map[string]interface{})
+		mapValue, isMap := v.(map[interface{}]interface{})
 		if isMap {
 			result = append(result, CopyableMap(mapValue).DeepCopy())
 			continue

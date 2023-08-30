@@ -19,10 +19,11 @@ type Store interface {
 	// not let user do, because they don't have to know the complicated thing
 	Get(r *http.Request, name string) (*Session, error)
 
+	// Should not have GetAllSessions method,
+	// first, user should not consider concurrency issue
+	// second, if return a copy of all sessions, the cost is huge.
 	// GetAllSessions should return all sessions in a slice
-	// copy-on-write for concurrency
-	// or read-only
-	GetAllSessions() ([]Session, error)
+	// GetAllSessions() ([]Session, error)
 
 	// New should create and return a new session.
 	//
@@ -73,7 +74,7 @@ func (s *memoryStore) Get(r *http.Request, name string) (*Session, error) {
 
 // New Return a new session.
 func (s *memoryStore) New(r *http.Request, name string) (*Session, error) {
-	id, err := generateRandomString(32)
+	id, err := s.generateID(32)
 	if err != nil {
 		return nil, err
 	}
@@ -88,20 +89,6 @@ func (s *memoryStore) New(r *http.Request, name string) (*Session, error) {
 		}
 	}
 	return session, nil
-}
-
-// get Return true if session found.
-func (s *memoryStore) get(id string, session *Session) bool {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	sInfo, ok := s.sessions[id]
-	if !ok {
-		return false
-	}
-	// copy value here, prevent data race
-	session.Values = sInfo.session.Values
-	*session.Options = *sInfo.session.Options
-	return true
 }
 
 // Save saves session into response and the underlying store.
@@ -122,6 +109,36 @@ func (s *memoryStore) save(session *Session) {
 	s.mutex.Lock()
 	s.sessions[session.id] = sessionInfoPtr
 	s.mutex.Unlock()
+}
+
+// get Return true if session found.
+func (s *memoryStore) get(id string, session *Session) bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	sInfo, ok := s.sessions[id]
+	if !ok {
+		return false
+	}
+	// copy value here, prevent data race
+	session.Values = sInfo.session.Values
+	*session.Options = *sInfo.session.Options
+	return true
+}
+
+// generateID Generate an unique ID for session.
+func (s *memoryStore) generateID(n int) (string, error) {
+	for {
+		id, err := generateRandomString(n)
+		if err != nil {
+			return "", err
+		}
+		s.mutex.RLock()
+		_, ok := s.sessions[id]
+		s.mutex.RUnlock()
+		if !ok {
+			return id, nil
+		}
+	}
 }
 
 func (s *memoryStore) deleteExpiredSessions() {
