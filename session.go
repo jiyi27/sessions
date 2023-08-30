@@ -1,13 +1,13 @@
 package sessions
 
 // NewSession is called by session stores to create a new session instance.
-func NewSession(name string, id string, opts *Options) *Session {
+func NewSession(name, id string) *Session {
 	return &Session{
 		name:    name,
 		id:      id,
 		Values:  make(map[interface{}]interface{}),
-		Options: opts,
 		IsNew:   true,
+		Options: new(Options),
 	}
 }
 
@@ -15,7 +15,9 @@ func NewSession(name string, id string, opts *Options) *Session {
 type Session struct {
 	name string
 	id   string
-	// Values contains the user-data for the session.
+	// Values contain the user-data for the session.
+	// Maps are reference types, so they are always passed by reference.
+	// So don't need to save as a pointer here.
 	Values  map[interface{}]interface{}
 	Options *Options
 	IsNew   bool

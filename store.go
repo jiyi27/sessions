@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"crypto/rand"
+	"fmt"
 	"math/big"
 	"net/http"
 	"sync"
@@ -11,10 +12,8 @@ import (
 // Store Interface ------------------------------------------------------------
 
 // Store is an interface for custom session stores.
-//
-// See CookieStore for example.
 type Store interface {
-	// Get should return a session if exists, if it doesn't exist create a new one
+	// Get should return a session if exists, if it doesn't exist, create a new one
 	// If Get doesn't create a new one and return nil instead, the user call this
 	// function have to create a session eventually, but creating a session should
 	// not let user do, because they don't have to know the complicated thing
@@ -60,41 +59,53 @@ type memoryStore struct {
 	mutex    sync.RWMutex
 }
 
-// Get return a session, if session doesn't exist create a new one
+// Get always return a new session, if the session corresponding to the cookie exists,
+// copy the session info into new session for preventing data race.
+// Because there is more than one goroutine need to access memoryStore.
+// Sessions are stored in memoryStore, if we don't make a copy here, users need to lock almost
+// everything when trying to read or change the session.
 func (s *memoryStore) Get(r *http.Request, name string) (*Session, error) {
-	// return ErrNoCookie if not found
-	if c, err := r.Cookie(name); err != nil {
-		session, _ := s.New(name)
-		return session, nil
-	} else {
-		// IsNew = false
-
-		return nil, err
+	if !isCookieNameValid(name) {
+		return nil, fmt.Errorf("sessions: invalid character in cookie name: %s", name)
 	}
+	return s.New(r, name)
 }
 
-// New Return a new session and save it to memoryStore
-func (s *memoryStore) New(name string) (*Session, error) {
-	if id, err := GenerateRandomString(16); err != nil {
-		// error handling
+// New Return a new session.
+func (s *memoryStore) New(r *http.Request, name string) (*Session, error) {
+	id, err := generateRandomString(32)
+	if err != nil {
 		return nil, err
-	} else {
-		session := NewSession(name, id, s.options)
-		d := time.Duration(options.MaxAge) * time.Second
-		// Check the Concurrency part: https://go.dev/blog/maps
-		// mutext: https://stackoverflow.com/a/19168242/16317008
-		s.mutex.Lock()
-		defer s.mutex.Unlock()
-		s.sessions[id] = &sessionInfo{
-			session:          session,
-			expiresTimestamp: time.Now().Add(d).Unix(),
+	}
+	session := NewSession(name, id)
+	*session.Options = *s.options
+	// cookie found
+	if c, errCookie := r.Cookie(name); errCookie == nil {
+		// cookie is correct
+		if s.get(c.Value, session) {
+			session.id = c.Value
+			session.IsNew = false
 		}
-		return session, nil
 	}
+	return session, nil
 }
 
-// Save adds a single session to the response
-func (s *memoryStore) Save(r *http.Request, w http.ResponseWriter,
+// get Return true if session found.
+func (s *memoryStore) get(id string, session *Session) bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	sInfo, ok := s.sessions[id]
+	if !ok {
+		return false
+	}
+	// copy value here, prevent data race
+	session.Values = sInfo.session.Values
+	*session.Options = *sInfo.session.Options
+	return true
+}
+
+// Save saves session into response and the underlying store.
+func (s *memoryStore) Save(_ *http.Request, w http.ResponseWriter,
 	session *Session) error {
 	// if session expires, set cookie value = ""
 	http.SetCookie(w, NewCookie(session.name, session.id, session.Options))
@@ -103,26 +114,36 @@ func (s *memoryStore) Save(r *http.Request, w http.ResponseWriter,
 }
 
 func (s *memoryStore) save(session *Session) {
-
+	d := time.Duration(session.Options.MaxAge) * time.Second
+	sessionInfoPtr := &sessionInfo{
+		session:          session,
+		expiresTimestamp: time.Now().Add(d).Unix(),
+	}
+	s.mutex.Lock()
+	s.sessions[session.id] = sessionInfoPtr
+	s.mutex.Unlock()
 }
 
 func (s *memoryStore) deleteExpiredSessions() {
+	// Check the Concurrency part: https://go.dev/blog/maps
+	// mutex: https://stackoverflow.com/a/19168242/16317008
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	for k, session := range s.sessions {
-		d := time.Duration(session.Options.MaxAge) * time.Second
+	for k, info := range s.sessions {
+		if info.expiresTimestamp >= time.Now().Unix() {
+			delete(s.sessions, k)
+		}
 	}
-
 }
 
 // https://gist.github.com/dopey/c69559607800d2f2f90b1b1ed4e550fb
-func GenerateRandomString(n int) (string, error) {
-	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#@!*&%-_+="
+func generateRandomString(n int) (string, error) {
+	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#"
 	ret := make([]byte, n)
 	for i := 0; i < n; i++ {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to generate session id: %v", err)
 		}
 		ret = append(ret, letters[num.Int64()])
 	}
