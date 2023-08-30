@@ -1,5 +1,7 @@
 package sessions
 
+import "net/http"
+
 // Options stores configuration for a session or session store.
 //
 // Fields are a subset of http.Cookie fields.
@@ -10,4 +12,5 @@ type Options struct {
 	MaxAge   int
 	Secure   bool
 	HttpOnly bool
+	SameSite http.SameSite
 }

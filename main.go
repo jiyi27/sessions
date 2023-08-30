@@ -1,5 +1,0 @@
-package sessions
-
-func main() {
-
-}
