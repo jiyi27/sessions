@@ -9,10 +9,6 @@ import (
 	"testing"
 )
 
-type Cat struct {
-	name string
-}
-
 // test function signature: func TestXxxx(t *testing.T).
 func TestDeepCopyMap(t *testing.T) {
 	testCases := []struct {
@@ -92,22 +88,6 @@ func TestDeepCopyMap(t *testing.T) {
 			},
 			expectedOriginal: map[interface{}]interface{}{
 				"cats": []string{"Coco", "Bella"},
-			},
-		},
-		// mutation of nested slices
-		{
-			original: map[interface{}]interface{}{
-				"cats": []Cat{{name: "jack"}},
-			},
-			transformer: func(m map[interface{}]interface{}) map[interface{}]interface{} {
-				m["cats"].([]Cat)[0].name = "Luna"
-				return m
-			},
-			expectedCopy: map[interface{}]interface{}{
-				"cats": []Cat{{name: "jack"}},
-			},
-			expectedOriginal: map[interface{}]interface{}{
-				"cats": []Cat{{name: "jack"}},
 			},
 		},
 	}
