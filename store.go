@@ -83,7 +83,16 @@ func (s *memoryStore) New(r *http.Request, name string) (*Session, error) {
 	// cookie found
 	if c, errCookie := r.Cookie(name); errCookie == nil {
 		// cookie is correct
-		if s.get(c.Value, session) {
+		s.mutex.RLock()
+		defer s.mutex.RUnlock()
+		sInfo, ok := s.sessions[id]
+		if ok {
+			// deep copy value here, prevent data race
+			session.Values, err = DeepCopyMap(sInfo.session.Values)
+			if err != nil {
+				return nil, err
+			}
+			*session.Options = *sInfo.session.Options
 			session.id = c.Value
 			session.IsNew = false
 		}
@@ -109,20 +118,6 @@ func (s *memoryStore) save(session *Session) {
 	s.mutex.Lock()
 	s.sessions[session.id] = sessionInfoPtr
 	s.mutex.Unlock()
-}
-
-// get Return true if session found.
-func (s *memoryStore) get(id string, session *Session) bool {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	sInfo, ok := s.sessions[id]
-	if !ok {
-		return false
-	}
-	// copy value here, prevent data race
-	session.Values = sInfo.session.Values
-	*session.Options = *sInfo.session.Options
-	return true
 }
 
 // generateID Generate an unique ID for session.
