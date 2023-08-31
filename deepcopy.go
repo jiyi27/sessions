@@ -1,56 +1,26 @@
 package sessions
 
-type CopyableMap map[interface{}]interface{}
-type CopyableSlice []interface{}
+import (
+	"bytes"
+	"encoding/gob"
+	"fmt"
+)
 
-// DeepCopy will create a deep copy of this map.
-// Both maps and slices will be considered when making the copy.
-func (m CopyableMap) DeepCopy() map[interface{}]interface{} {
-	result := map[interface{}]interface{}{}
-
-	for k, v := range m {
-		// Handle maps
-		mapValue, isMap := v.(map[interface{}]interface{})
-		if isMap {
-			result[k] = CopyableMap(mapValue).DeepCopy()
-			continue
-		}
-
-		// Handle slices
-		sliceValue, isSlice := v.([]interface{})
-		if isSlice {
-			result[k] = CopyableSlice(sliceValue).DeepCopy()
-			continue
-		}
-
-		result[k] = v
+// DeepCopyMap performs a deep copy of the given map m.
+// You should register for that type if you have nested map
+// e.g., if you have map[string]int{} as a value of a key,
+// then you need register: gob.Register(map[string]int{}) before call DeepCopyMap.
+func DeepCopyMap(m map[interface{}]interface{}) (map[interface{}]interface{}, error) {
+	gob.Register(map[interface{}]interface{}{})
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	dec := gob.NewDecoder(buf)
+	if err := enc.Encode(m); err != nil {
+		return nil, fmt.Errorf("failed to copy map: %v", err)
 	}
-
-	return result
-}
-
-// DeepCopy will create a deep copy of this slice.
-// Both maps and slices will be considered when making the copy.
-func (s CopyableSlice) DeepCopy() []interface{} {
-	var result []interface{}
-
-	for _, v := range s {
-		// Handle maps
-		mapValue, isMap := v.(map[interface{}]interface{})
-		if isMap {
-			result = append(result, CopyableMap(mapValue).DeepCopy())
-			continue
-		}
-
-		// Handle slices
-		sliceValue, isSlice := v.([]interface{})
-		if isSlice {
-			result = append(result, CopyableSlice(sliceValue).DeepCopy())
-			continue
-		}
-
-		result = append(result, v)
+	result := make(map[interface{}]interface{})
+	if err := dec.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to copy map: %v", err)
 	}
-
-	return result
+	return result, nil
 }
