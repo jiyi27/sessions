@@ -37,16 +37,23 @@ type Store interface {
 
 // memoryStore ------------------------------------------------------------
 
+// mutexes are frequently wrapped up in a `struct` with the value they control.
+// we should put memoryMutex as a field of memoryStore
+// struct Session has a field which is Store
+// However, we should not copy a `sync.Mutex` value as that breaks the invariants of the mutex.
+// Therefore, for aviod copying, we put memoryMutex as a package level variable.
+// https://dave.cheney.net/2016/03/19/should-methods-be-declared-on-t-or-t
+var memoryMutex sync.RWMutex
+
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
 		sessions: map[string]*sessionInfo{},
 		// default settings
-		options: &Options{
+		Options: &Options{
 			Path:     "/",
 			MaxAge:   60,
 			SameSite: http.SameSiteDefaultMode,
 		},
-		mutex: sync.RWMutex{},
 	}
 }
 
@@ -56,8 +63,7 @@ type memoryStore struct {
 	// reason that saves a pointer to Session rather the value of Session here:
 	// https://stackoverflow.com/a/29868656/16317008
 	sessions map[string]*sessionInfo
-	options  *Options
-	mutex    sync.RWMutex
+	Options  *Options
 }
 
 // Get always return a new session, if the session corresponding to the cookie exists,
@@ -78,13 +84,13 @@ func (s *memoryStore) New(r *http.Request, name string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	session := NewSession(name, id)
-	*session.Options = *s.options
+	session := NewSession(name, id, s)
+	*session.Options = *s.Options
 	// cookie found
 	if c, errCookie := r.Cookie(name); errCookie == nil {
 		// cookie is correct
-		s.mutex.RLock()
-		defer s.mutex.RUnlock()
+		memoryMutex.RLock()
+		defer memoryMutex.RUnlock()
 		sInfo, ok := s.sessions[id]
 		if ok {
 			// deep copy value here, prevent data race
@@ -115,9 +121,9 @@ func (s *memoryStore) save(session *Session) {
 		session:          session,
 		expiresTimestamp: time.Now().Add(d).Unix(),
 	}
-	s.mutex.Lock()
+	memoryMutex.Lock()
 	s.sessions[session.id] = sessionInfoPtr
-	s.mutex.Unlock()
+	memoryMutex.Unlock()
 }
 
 // generateID Generate an unique ID for session.
@@ -127,9 +133,9 @@ func (s *memoryStore) generateID(n int) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		s.mutex.RLock()
+		memoryMutex.RLock()
 		_, ok := s.sessions[id]
-		s.mutex.RUnlock()
+		memoryMutex.RUnlock()
 		if !ok {
 			return id, nil
 		}
@@ -139,8 +145,8 @@ func (s *memoryStore) generateID(n int) (string, error) {
 func (s *memoryStore) deleteExpiredSessions() {
 	// Check the Concurrency part: https://go.dev/blog/maps
 	// mutex: https://stackoverflow.com/a/19168242/16317008
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	memoryMutex.Lock()
+	defer memoryMutex.Unlock()
 	for k, info := range s.sessions {
 		if info.expiresTimestamp >= time.Now().Unix() {
 			delete(s.sessions, k)

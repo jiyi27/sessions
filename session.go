@@ -1,13 +1,16 @@
 package sessions
 
+import "net/http"
+
 // NewSession is called by session stores to create a new session instance.
-func NewSession(name, id string) *Session {
+func NewSession(name, id string, store Store) *Session {
 	return &Session{
 		name:    name,
 		id:      id,
 		Values:  make(map[interface{}]interface{}),
 		IsNew:   true,
 		Options: new(Options),
+		store:   store,
 	}
 }
 
@@ -21,6 +24,14 @@ type Session struct {
 	Values  map[interface{}]interface{}
 	Options *Options
 	IsNew   bool
+	store   Store
+}
+
+// Save is a convenience method to save this session. It is the same as calling
+// store.Save(request, response, session). You should call Save before writing to
+// the response or returning from the handler.
+func (s *Session) Save(r *http.Request, w http.ResponseWriter) error {
+	return s.store.Save(r, w, s)
 }
 
 type sessionInfo struct {
