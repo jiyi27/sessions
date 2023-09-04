@@ -95,7 +95,7 @@ func TestDeepCopyMap(t *testing.T) {
 	for i, tc := range testCases {
 		result, err := DeepCopyMap(tc.original)
 		if err != nil {
-			t.Errorf("error happens: %v, in test case: %d", err, i)
+			t.Fatalf("error happens: %v, in test case: %d", err, i)
 		}
 		tc.transformer(result)
 		// reflect.DeepEqual(): https://stackoverflow.com/a/18211675/16317008

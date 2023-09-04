@@ -33,6 +33,103 @@ type Store interface {
 	Save(r *http.Request, w http.ResponseWriter, s *MySession) error
 }
 
+// cookieStore same as memoryStore but no deep-copy --------------------------------------------------
+
+func newCookieStore() *cookieStore {
+	s := cookieStore{
+		sessions: make(map[string]*Session),
+		options: &Options{
+			Path:     "/",
+			MaxAge:   60,
+			SameSite: http.SameSiteDefaultMode,
+		},
+	}
+	go s.monitorExpiredSessions()
+	return &s
+}
+
+type cookieStore struct {
+	sessions map[string]*Session
+	options  *Options
+}
+
+// Get returns a session if exists, if it doesn't exist, create a new one.
+func (s *cookieStore) Get(r *http.Request, name string) (*Session, error) {
+	if !isCookieNameValid(name) {
+		return nil, fmt.Errorf("sessions: invalid character in cookie name: %s", name)
+	}
+	if c, err := r.Cookie(name); err == nil {
+		// if cookie exists in the request
+		// and check if there is a corresponding session in cookieStore.
+		mutex.RLock()
+		session, ok := s.sessions[c.Value]
+		mutex.RUnlock()
+		if ok {
+			session.SetIsNew(false)
+			return session, nil
+		}
+	}
+	// cookie doesn't exist or no corresponding session stored in cookieStore
+	// generate a new session.
+	return s.New(name)
+}
+
+// New Returns a new session and saves it into underlying store.
+func (s *cookieStore) New(name string) (*Session, error) {
+	id, err := s.generateID(32)
+	if err != nil {
+		return nil, err
+	}
+	session := NewSession(name, id, *s.options)
+	// saves session into underlying store.
+	mutex.Lock()
+	s.sessions[session.id] = session
+	mutex.Unlock()
+	return session, nil
+}
+
+// generateID Generate an unique ID for session.
+func (s *cookieStore) generateID(n int) (string, error) {
+	for {
+		if id, err := GenerateRandomString(n); err != nil {
+			return "", err
+		} else {
+			mutex.RLock()
+			_, ok := s.sessions[id]
+			mutex.RUnlock()
+			if !ok {
+				return id, nil
+			}
+		}
+	}
+}
+
+func (s *cookieStore) monitorExpiredSessions() {
+	ticker := time.NewTicker(time.Second)
+	for range ticker.C {
+		if s.isEmpty() {
+			continue
+		}
+		for k, session := range s.sessions {
+			if session.expiresTimestamp >= time.Now().Unix() {
+				s.delete(k)
+			}
+		}
+	}
+}
+
+func (s *cookieStore) delete(k string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	delete(s.sessions, k)
+}
+
+func (s *cookieStore) isEmpty() bool {
+	mutex.RLock()
+	defer mutex.RUnlock()
+	return len(s.sessions) == 0
+}
+
 // memoryStore ------------------------------------------------------------
 
 // mutexes are frequently wrapped up in a `struct` with the value they control.
@@ -167,112 +264,5 @@ func (s *memoryStore) delete(k string) {
 func (s *memoryStore) isEmpty() bool {
 	memoryMutex.RLock()
 	defer memoryMutex.RUnlock()
-	return len(s.sessions) == 0
-}
-
-// cookieStore same as memoryStore but no deep-copy --------------------------------------------------
-
-func newCookieStore() *cookieStore {
-	s := cookieStore{
-		sessions: make(map[string]*Session),
-		options: &Options{
-			Path:     "/",
-			MaxAge:   60,
-			SameSite: http.SameSiteDefaultMode,
-		},
-	}
-	go s.monitorExpiredSessions()
-	return &s
-}
-
-type cookieStore struct {
-	sessions map[string]*Session
-	options  *Options
-}
-
-// Get returns a session if exists, if it doesn't exist, create a new one.
-func (s *cookieStore) Get(r *http.Request, name string) (*Session, error) {
-	if !isCookieNameValid(name) {
-		return nil, fmt.Errorf("sessions: invalid character in cookie name: %s", name)
-	}
-	if c, err := r.Cookie(name); err == nil {
-		// if cookie exists in the request
-		// and check if there is a corresponding session in cookieStore.
-		mutex.RLock()
-		session, ok := s.sessions[c.Value]
-		session.SetIsNew(false)
-		mutex.RUnlock()
-		if ok {
-			return session, nil
-		}
-	}
-	// cookie doesn't exist or no corresponding session stored in cookieStore
-	// generate a new session.
-	return s.New(name)
-}
-
-// New Return a new session.
-func (s *cookieStore) New(name string) (*Session, error) {
-	id, err := s.generateID(32)
-	if err != nil {
-		return nil, err
-	}
-	session := NewSession(name, id, *s.options)
-	return session, nil
-}
-
-// Save saves session into response and the underlying store.
-func (s *cookieStore) Save(w http.ResponseWriter, session *Session) error {
-	opts := session.GetOptions()
-	http.SetCookie(w, NewCookie(session.name, session.id, &opts))
-	s.save(session)
-	return nil
-}
-
-func (s *cookieStore) save(session *Session) {
-	memoryMutex.Lock()
-	s.sessions[session.id] = session
-	memoryMutex.Unlock()
-}
-
-// generateID Generate an unique ID for session.
-func (s *cookieStore) generateID(n int) (string, error) {
-	for {
-		if id, err := GenerateRandomString(n); err != nil {
-			return "", err
-		} else {
-			memoryMutex.RLock()
-			_, ok := s.sessions[id]
-			memoryMutex.RUnlock()
-			if !ok {
-				return id, nil
-			}
-		}
-	}
-}
-
-func (s *cookieStore) monitorExpiredSessions() {
-	ticker := time.NewTicker(time.Second)
-	for range ticker.C {
-		if s.isEmpty() {
-			continue
-		}
-		for k, info := range s.sessions {
-			if info.expiresTimestamp >= time.Now().Unix() {
-				s.delete(k)
-			}
-		}
-	}
-}
-
-func (s *cookieStore) delete(k string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-	delete(s.sessions, k)
-}
-
-func (s *cookieStore) isEmpty() bool {
-	mutex.RLock()
-	defer mutex.RUnlock()
 	return len(s.sessions) == 0
 }
