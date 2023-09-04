@@ -34,6 +34,16 @@ func (s *Session) Save(r *http.Request, w http.ResponseWriter) error {
 	return s.store.Save(r, w, s)
 }
 
+// Name returns the name used to register the session.
+func (s *Session) Name() string {
+	return s.name
+}
+
+// Store returns the session store used to register the session.
+func (s *Session) Store() Store {
+	return s.store
+}
+
 type sessionInfo struct {
 	session          *Session
 	expiresTimestamp int64

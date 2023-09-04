@@ -46,7 +46,7 @@ type Store interface {
 var memoryMutex sync.RWMutex
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{
+	s := memoryStore{
 		sessions: map[string]*sessionInfo{},
 		// default settings
 		Options: &Options{
@@ -55,6 +55,8 @@ func newMemoryStore() *memoryStore {
 			SameSite: http.SameSiteDefaultMode,
 		},
 	}
+	go s.monitorExpiredSessions()
+	return &s
 }
 
 // not thread-safe
@@ -91,7 +93,7 @@ func (s *memoryStore) New(r *http.Request, name string) (*Session, error) {
 		// cookie is correct
 		memoryMutex.RLock()
 		defer memoryMutex.RUnlock()
-		sInfo, ok := s.sessions[id]
+		sInfo, ok := s.sessions[c.Value]
 		if ok {
 			// deep copy value here, prevent data race
 			session.Values, err = DeepCopyMap(sInfo.session.Values)
@@ -142,29 +144,36 @@ func (s *memoryStore) generateID(n int) (string, error) {
 	}
 }
 
-func (s *memoryStore) deleteExpiredSessions() {
-	// Check the Concurrency part: https://go.dev/blog/maps
-	// mutex: https://stackoverflow.com/a/19168242/16317008
-	memoryMutex.Lock()
-	defer memoryMutex.Unlock()
-	for k, info := range s.sessions {
-		if info.expiresTimestamp >= time.Now().Unix() {
-			delete(s.sessions, k)
-		}
-	}
-}
-
 // https://gist.github.com/dopey/c69559607800d2f2f90b1b1ed4e550fb
 func generateRandomString(n int) (string, error) {
-	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#"
+	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz=#-"
 	ret := make([]byte, n)
 	for i := 0; i < n; i++ {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
 		if err != nil {
 			return "", fmt.Errorf("failed to generate session id: %v", err)
 		}
-		ret = append(ret, letters[num.Int64()])
+		ret[i] = letters[num.Int64()]
 	}
 
 	return string(ret), nil
+}
+
+func (s *memoryStore) monitorExpiredSessions() {
+	// Check the concurrency part: https://go.dev/blog/maps
+	// mutex: https://stackoverflow.com/a/19168242/16317008
+	for {
+		time.Sleep(time.Second)
+		memoryMutex.Lock()
+		if len(s.sessions) == 0 {
+			memoryMutex.Unlock()
+			continue
+		}
+		for k, info := range s.sessions {
+			if info.expiresTimestamp >= time.Now().Unix() {
+				delete(s.sessions, k)
+			}
+		}
+		memoryMutex.Unlock()
+	}
 }
