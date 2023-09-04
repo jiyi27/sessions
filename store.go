@@ -160,20 +160,31 @@ func generateRandomString(n int) (string, error) {
 }
 
 func (s *memoryStore) monitorExpiredSessions() {
-	// Check the concurrency part: https://go.dev/blog/maps
-	// mutex: https://stackoverflow.com/a/19168242/16317008
-	for {
-		time.Sleep(time.Second)
-		memoryMutex.Lock()
-		if len(s.sessions) == 0 {
-			memoryMutex.Unlock()
+	ticker := time.NewTicker(time.Second)
+	for range ticker.C {
+		if s.isEmpty() {
 			continue
 		}
 		for k, info := range s.sessions {
 			if info.expiresTimestamp >= time.Now().Unix() {
-				delete(s.sessions, k)
+				s.delete(k)
 			}
 		}
-		memoryMutex.Unlock()
 	}
 }
+
+func (s *memoryStore) delete(k string) {
+	// check the concurrency part: https://go.dev/blog/maps
+	// mutex: https://stackoverflow.com/a/19168242/16317008
+	memoryMutex.Lock()
+	defer memoryMutex.Unlock()
+	delete(s.sessions, k)
+}
+
+func (s *memoryStore) isEmpty() bool {
+	memoryMutex.RLock()
+	defer memoryMutex.RUnlock()
+	return len(s.sessions) == 0
+}
+
+// memoryStore ------------------------------------------------------------
