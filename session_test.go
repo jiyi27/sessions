@@ -14,7 +14,7 @@ func TestSessionValues(t *testing.T) {
 	var err error
 	var ok bool
 	var cookies []string
-	var session *Session
+	var session *MySession
 
 	store := newMemoryStore()
 
