@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-// Session --------------------------------------------------------------------------
-
 var mutex sync.RWMutex
 
 func NewSession(name, id string, options Options) *Session {
@@ -66,7 +64,7 @@ func (s *Session) SetIsNew(isNew bool) {
 	s.isNew = isNew
 }
 
-// getExpiry used by cookieStore for deleting expired session internally.
+// getExpiry used by MemoryStore for deleting expired session internally.
 // Users don't need to care about this function.
 func (s *Session) getExpiry() int64 {
 	mutex.RLock()
@@ -189,50 +187,4 @@ func (s *Session) GetCookieSameSite() http.SameSite {
 	mutex.RLock()
 	defer mutex.RUnlock()
 	return s.options.SameSite
-}
-
-// SessionWithDeepCopy --------------------------------------------------------------------------
-
-// NewMySession is called by session stores to create a new session instance.
-func NewMySession(name, id string, maxAge int, store Store) *MySession {
-	return &MySession{
-		name:    name,
-		id:      id,
-		Values:  make(map[interface{}]interface{}),
-		IsNew:   true,
-		Options: new(Options),
-		expiry:  time.Now().Add(time.Duration(maxAge) * time.Second).Unix(),
-		store:   store,
-	}
-}
-
-// MySession stores the values and optional configuration for a session.
-type MySession struct {
-	name string
-	id   string
-	// Values contain the user-data for the session.
-	// Maps are reference types, so they are always passed by reference.
-	// So don't need to save as a pointer here.
-	Values  map[interface{}]interface{}
-	Options *Options
-	IsNew   bool
-	expiry  int64
-	store   Store
-}
-
-// Save is a convenience method to save this session. It is the same as calling
-// store.Save(request, response, session). You should call Save before writing to
-// the response or returning from the handler.
-func (s *MySession) Save(r *http.Request, w http.ResponseWriter) error {
-	return s.store.Save(r, w, s)
-}
-
-// Name returns the name used to register the session.
-func (s *MySession) Name() string {
-	return s.name
-}
-
-// Store returns the session store used to register the session.
-func (s *MySession) Store() Store {
-	return s.store
 }

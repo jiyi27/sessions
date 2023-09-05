@@ -7,16 +7,16 @@ import (
 	"time"
 )
 
-func TestMySession(t *testing.T) {
+func TestSession(t *testing.T) {
 	var req *http.Request
 	var rsp *httptest.ResponseRecorder
 	var hdr http.Header
 	var err error
 	var ok bool
 	var cookies []string
-	var session *MySession
+	var session *Session
 
-	store := newMemoryStore()
+	store := NewMemoryStore()
 
 	// Round 1 ----------------------------------------------------------------
 
@@ -26,13 +26,10 @@ func TestMySession(t *testing.T) {
 	if session, err = store.Get(req, "session-key"); err != nil {
 		t.Fatalf("Error getting session: %v", err)
 	}
-	session.Values["name"] = "Coco"
-	session.Values["age"] = 18
-	session.Options.MaxAge = 3
-	// Save.
-	if err = session.Save(req, rsp); err != nil {
-		t.Fatalf("Error saving session: %v", err)
-	}
+	session.InsertValue("name", "Coco")
+	session.InsertValue("age", 18)
+	session.SetMaxAge(3)
+	session.Save(rsp)
 	hdr = rsp.Header()
 	cookies, ok = hdr["Set-Cookie"]
 	if !ok || len(cookies) != 1 {
@@ -42,37 +39,53 @@ func TestMySession(t *testing.T) {
 	// Round 2 ----------------------------------------------------------------
 
 	req, _ = http.NewRequest("GET", "http://localhost:8080/", nil)
-	// simulate client can send cookie that we've saved into its response in last round
+	// Simulate client send cookie that we've saved into the response in last round.
 	req.Header.Add("Cookie", cookies[0])
-	// Get a session.
 	if session, err = store.Get(req, "session-key"); err != nil {
 		t.Fatalf("Error getting session: %v", err)
 	}
-	if session.IsNew {
-		t.Errorf("Expected session.IsNew = false; Got session.IsNew=%v", session.IsNew)
+	// Test if the session was saved successfully in last round.
+	if session.IsNew() {
+		t.Errorf("Expected session.isNew=false; got, session.isNew=%v", session.IsNew())
 	}
-	// Test if the Values has been saved in last round
-	if session.Values["name"] != "Coco" || session.Values["age"] != 18 {
-		t.Errorf("Expected name=Coco, age=13; Got %v", session.Values)
+	// Test if the gc deletes session incorrectly.
+	time.Sleep(time.Second)
+	if session, err = store.Get(req, "session-key"); err != nil {
+		t.Fatalf("Error getting session: %v", err)
 	}
-	// Test if there is a deep copy for session
-	session.Values["name"] = "Bella"
-	c, err := req.Cookie("session-key")
-	if err != nil {
-		t.Error("failed to get cookie")
+	if session.IsNew() {
+		t.Fatal("gc deletes session incorrectly")
 	}
-	memoryMutex.RLock()
-	if session.Values["name"] == store.sessions[c.Value].Values["name"] {
-		t.Errorf("No deep copy; Expected name=Coco; Got %v", store.sessions[c.Value].Values["name"])
+	_, err1 := session.GetValueByKey("name")
+	_, err2 := session.GetValueByKey("age")
+	if err1 != nil || err2 != nil {
+		t.Fatal("Error the values has not been saved successfully")
 	}
-	memoryMutex.RUnlock()
+	// Modify value for next round test.
+	err = session.ModifyValueByKey("name", "Bella")
+	session.SetCookieHttpOnly(true)
+	session.Save(rsp)
 
-	// Test if sessions are removed correctly
-	time.Sleep(5 * time.Second)
+	// Round 3 ----------------------------------------------------------------
+
+	req, _ = http.NewRequest("GET", "http://localhost:8080/", nil)
+	req.Header.Add("Cookie", cookies[0])
 	if session, err = store.Get(req, "session-key"); err != nil {
 		t.Fatalf("Error getting session: %v", err)
 	}
-	if !session.IsNew {
-		t.Errorf("Expected session.IsNew = true; Got session.IsNew=%v", session.IsNew)
+	name, err := session.GetValueByKey("name")
+	if name != "Bella" {
+		t.Errorf("Expected name = Bella; Got name=%v", name)
+	}
+	if !session.GetCookieHttpOnly() {
+		t.Errorf("Expected http only = true; httponly=%v", session.GetCookieHttpOnly())
+	}
+	// Test if sessions are removed correctly
+	time.Sleep(3 * time.Second)
+	if session, err = store.Get(req, "session-key"); err != nil {
+		t.Fatalf("Error getting session: %v", err)
+	}
+	if !session.IsNew() {
+		t.Errorf("Expected session.IsNew() = true; Got session.IsNew=%v", session.IsNew())
 	}
 }
