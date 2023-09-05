@@ -16,7 +16,7 @@ func TestSession(t *testing.T) {
 	var cookies []string
 	var session *Session
 
-	store := NewMemoryStore()
+	store := NewMemoryStore(32)
 
 	// Round 1 ----------------------------------------------------------------
 

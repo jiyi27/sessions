@@ -10,7 +10,7 @@ import (
 // https://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go
 
 func BenchmarkSession(b *testing.B) {
-	store := NewMemoryStore()
+	store := NewMemoryStore(32)
 	// The body function will be run in each goroutine.
 	b.RunParallel(func(pb *testing.PB) {
 		var req *http.Request

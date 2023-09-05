@@ -114,13 +114,13 @@ func (s *Session) GetOptions() Options {
 }
 
 // SetMaxAge sets the MaxAge of a session.
-func (s *Session) SetMaxAge(ma int) {
+func (s *Session) SetMaxAge(seconds int) {
 	mutex.Lock()
 	defer mutex.Unlock()
-	s.options.MaxAge = ma
+	s.options.MaxAge = seconds
 	// Set expiresTimestamp for deleting expired session.
 	// Users don't need to care expiresTimestamp field of a session.
-	s.expiry = time.Now().Add(time.Duration(ma) * time.Second).Unix()
+	s.expiry = time.Now().Add(time.Duration(seconds) * time.Second).Unix()
 }
 
 func (s *Session) SetCookiePath(path string) {

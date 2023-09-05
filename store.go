@@ -6,7 +6,12 @@ import (
 	"time"
 )
 
-func NewMemoryStore() *MemoryStore {
+// NewMemoryStore returns a new MemoryStore.
+// The parameter is the length for session id, this is just an id,
+// it not secure even you set it every long,
+// you should set it to 32~64, don't make it too big for performance,
+// we save it as a key in a map
+func NewMemoryStore(length int) *MemoryStore {
 	s := MemoryStore{
 		sessions: make(map[string]*Session),
 		options: &Options{
@@ -15,6 +20,7 @@ func NewMemoryStore() *MemoryStore {
 			SameSite: http.SameSiteDefaultMode,
 		},
 		gcInterval: time.Millisecond * 500,
+		idLength:   length,
 	}
 	go s.gc()
 	return &s
@@ -24,6 +30,7 @@ type MemoryStore struct {
 	sessions   map[string]*Session
 	options    *Options
 	gcInterval time.Duration
+	idLength   int
 }
 
 // Get returns a session if exists, if it doesn't exist, create a new one.
@@ -49,7 +56,7 @@ func (s *MemoryStore) Get(r *http.Request, name string) (*Session, error) {
 
 // New Returns a new session and saves it into underlying store.
 func (s *MemoryStore) New(name string) (*Session, error) {
-	id, err := s.generateID(32)
+	id, err := s.generateID()
 	if err != nil {
 		return nil, err
 	}
@@ -62,9 +69,9 @@ func (s *MemoryStore) New(name string) (*Session, error) {
 }
 
 // generateID Generate an unique ID for session.
-func (s *MemoryStore) generateID(n int) (string, error) {
+func (s *MemoryStore) generateID() (string, error) {
 	for {
-		if id, err := GenerateRandomString(n); err != nil {
+		if id, err := GenerateRandomString(s.idLength); err != nil {
 			return "", err
 		} else {
 			mutex.RLock()
@@ -86,6 +93,8 @@ func (s *MemoryStore) gc() {
 		if s.isEmpty() {
 			continue
 		}
+		// Drop useless elements in last round.
+		expired = expired[:0]
 		mutex.RLock()
 		for k, session := range s.sessions {
 			if session.expiry <= time.Now().Unix() {
