@@ -48,6 +48,14 @@ func TestSession(t *testing.T) {
 	if session.IsNew() {
 		t.Errorf("Expected session.isNew=false; got, session.isNew=%v", session.IsNew())
 	}
+	// Test if the gc deletes session incorrectly.
+	time.Sleep(time.Second)
+	if session, err = store.Get(req, "session-key"); err != nil {
+		t.Fatalf("Error getting session: %v", err)
+	}
+	if session.IsNew() {
+		t.Fatal("gc deletes session incorrectly")
+	}
 	_, err1 := session.GetValueByKey("name")
 	_, err2 := session.GetValueByKey("age")
 	if err1 != nil || err2 != nil {
@@ -73,7 +81,7 @@ func TestSession(t *testing.T) {
 		t.Errorf("Expected http only = true; httponly=%v", session.GetCookieHttpOnly())
 	}
 	// Test if sessions are removed correctly
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second)
 	if session, err = store.Get(req, "session-key"); err != nil {
 		t.Fatalf("Error getting session: %v", err)
 	}

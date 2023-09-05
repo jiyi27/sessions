@@ -13,12 +13,12 @@ var mutex sync.RWMutex
 
 func NewSession(name, id string, options Options) *Session {
 	return &Session{
-		name:             name,
-		id:               id,
-		isNew:            true,
-		expiresTimestamp: time.Now().Add(time.Duration(options.MaxAge)).Unix(),
-		values:           make(map[interface{}]interface{}),
-		options:          &options,
+		name:    name,
+		id:      id,
+		isNew:   true,
+		expiry:  time.Now().Add(time.Duration(options.MaxAge) * time.Second).Unix(),
+		values:  make(map[interface{}]interface{}),
+		options: &options,
 	}
 }
 
@@ -26,11 +26,11 @@ type Session struct {
 	name  string
 	id    string
 	isNew bool
-	// expiresTimestamp is used for deleting expired
+	// expiry is used for deleting expired
 	// session internally, user don't need to care.
-	expiresTimestamp int64
-	values           map[interface{}]interface{}
-	options          *Options
+	expiry  int64
+	values  map[interface{}]interface{}
+	options *Options
 }
 
 // Save saves session into response.
@@ -66,12 +66,12 @@ func (s *Session) SetIsNew(isNew bool) {
 	s.isNew = isNew
 }
 
-// getExpiresTimestamp used by cookieStore for deleting expired session internally.
+// getExpiry used by cookieStore for deleting expired session internally.
 // Users don't need to care about this function.
-func (s *Session) getExpiresTimestamp() int64 {
+func (s *Session) getExpiry() int64 {
 	mutex.RLock()
 	defer mutex.RUnlock()
-	return s.expiresTimestamp
+	return s.expiry
 }
 
 // GetValueByKey returns a value whose key is k in the map.
@@ -122,7 +122,7 @@ func (s *Session) SetMaxAge(ma int) {
 	s.options.MaxAge = ma
 	// Set expiresTimestamp for deleting expired session.
 	// Users don't need to care expiresTimestamp field of a session.
-	s.expiresTimestamp = time.Now().Add(time.Duration(ma) * time.Second).Unix()
+	s.expiry = time.Now().Add(time.Duration(ma) * time.Second).Unix()
 }
 
 func (s *Session) SetCookiePath(path string) {
@@ -194,13 +194,14 @@ func (s *Session) GetCookieSameSite() http.SameSite {
 // SessionWithDeepCopy --------------------------------------------------------------------------
 
 // NewMySession is called by session stores to create a new session instance.
-func NewMySession(name, id string, store Store) *MySession {
+func NewMySession(name, id string, maxAge int, store Store) *MySession {
 	return &MySession{
 		name:    name,
 		id:      id,
 		Values:  make(map[interface{}]interface{}),
 		IsNew:   true,
 		Options: new(Options),
+		expiry:  time.Now().Add(time.Duration(maxAge) * time.Second).Unix(),
 		store:   store,
 	}
 }
@@ -215,6 +216,7 @@ type MySession struct {
 	Values  map[interface{}]interface{}
 	Options *Options
 	IsNew   bool
+	expiry  int64
 	store   Store
 }
 
@@ -233,9 +235,4 @@ func (s *MySession) Name() string {
 // Store returns the session store used to register the session.
 func (s *MySession) Store() Store {
 	return s.store
-}
-
-type sessionInfo struct {
-	session          *MySession
-	expiresTimestamp int64
 }

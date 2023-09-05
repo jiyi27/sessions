@@ -21,7 +21,7 @@ type Store interface {
 	// first, user should not consider concurrency issue
 	// second, if return a copy of all sessions, the cost is huge.
 	// GetAllSessions should return all sessions in a slice
-	// GetAllSessions() ([]MySession, error)
+	// GetAllSessions() ([]Session, error)
 
 	// New should create and return a new session.
 	//
@@ -43,14 +43,16 @@ func newCookieStore() *cookieStore {
 			MaxAge:   60,
 			SameSite: http.SameSiteDefaultMode,
 		},
+		gcInterval: time.Millisecond * 500,
 	}
-	go s.monitorExpiredSessions()
+	go s.gc()
 	return &s
 }
 
 type cookieStore struct {
-	sessions map[string]*Session
-	options  *Options
+	sessions   map[string]*Session
+	options    *Options
+	gcInterval time.Duration
 }
 
 // Get returns a session if exists, if it doesn't exist, create a new one.
@@ -104,24 +106,33 @@ func (s *cookieStore) generateID(n int) (string, error) {
 	}
 }
 
-func (s *cookieStore) monitorExpiredSessions() {
-	ticker := time.NewTicker(time.Second)
+// Adopted from: https://github.com/gofiber/storage/blob/main/memory/memory.go
+func (s *cookieStore) gc() {
+	ticker := time.NewTicker(s.gcInterval)
+	defer ticker.Stop()
+	var expired []string
 	for range ticker.C {
 		if s.isEmpty() {
 			continue
 		}
+		mutex.RLock()
 		for k, session := range s.sessions {
-			if session.expiresTimestamp >= time.Now().Unix() {
-				s.delete(k)
+			if session.expiry <= time.Now().Unix() {
+				expired = append(expired, k)
 			}
 		}
+		mutex.RUnlock()
+		mutex.Lock()
+		// Double-checked locking.
+		// User might have reset the max age of the session in the meantime.
+		for i := range expired {
+			v := s.sessions[expired[i]]
+			if v.expiry <= time.Now().Unix() {
+				delete(s.sessions, expired[i])
+			}
+		}
+		mutex.Unlock()
 	}
-}
-
-func (s *cookieStore) delete(k string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-	delete(s.sessions, k)
 }
 
 func (s *cookieStore) isEmpty() bool {
@@ -134,33 +145,35 @@ func (s *cookieStore) isEmpty() bool {
 
 // mutexes are frequently wrapped up in a `struct` with the value they control.
 // we should put memoryMutex as a field of memoryStore
-// struct MySession has a field which is Store
+// struct Session has a field which is Store
 // However, we should not copy a `sync.Mutex` value as that breaks the invariants of the mutex.
-// Therefore, for aviod copying, we put memoryMutex as a package level variable.
+// Therefore, for avoid copying, we put memoryMutex as a package level variable.
 // https://dave.cheney.net/2016/03/19/should-methods-be-declared-on-t-or-t
 var memoryMutex sync.RWMutex
 
 func newMemoryStore() *memoryStore {
 	s := memoryStore{
-		sessions: map[string]*sessionInfo{},
+		sessions: map[string]*MySession{},
 		// default settings
 		Options: &Options{
 			Path:     "/",
 			MaxAge:   60,
 			SameSite: http.SameSiteDefaultMode,
 		},
+		gcInterval: time.Millisecond * 500,
 	}
-	go s.monitorExpiredSessions()
+	go s.gc()
 	return &s
 }
 
 // not thread-safe
 // each request will have one or more goroutines
 type memoryStore struct {
-	// reason that saves a pointer to MySession rather the value of MySession here:
+	// reason that saves a pointer to Session rather the value of Session here:
 	// https://stackoverflow.com/a/29868656/16317008
-	sessions map[string]*sessionInfo
-	Options  *Options
+	sessions   map[string]*MySession
+	Options    *Options
+	gcInterval time.Duration
 }
 
 // Get always return a new session, if the session corresponding to the cookie exists,
@@ -181,21 +194,21 @@ func (s *memoryStore) New(r *http.Request, name string) (*MySession, error) {
 	if err != nil {
 		return nil, err
 	}
-	session := NewMySession(name, id, s)
+	session := NewMySession(name, id, s.Options.MaxAge, s)
 	*session.Options = *s.Options
 	// cookie found
 	if c, errCookie := r.Cookie(name); errCookie == nil {
 		// cookie is correct
 		memoryMutex.RLock()
 		defer memoryMutex.RUnlock()
-		sInfo, ok := s.sessions[c.Value]
+		se, ok := s.sessions[c.Value]
 		if ok {
 			// deep copy value here, prevent data race
-			session.Values, err = DeepCopyMap(sInfo.session.Values)
+			session.Values, err = DeepCopyMap(se.Values)
 			if err != nil {
 				return nil, err
 			}
-			*session.Options = *sInfo.session.Options
+			*session.Options = *se.Options
 			session.id = c.Value
 			session.IsNew = false
 		}
@@ -214,12 +227,9 @@ func (s *memoryStore) Save(_ *http.Request, w http.ResponseWriter,
 
 func (s *memoryStore) save(session *MySession) {
 	d := time.Duration(session.Options.MaxAge) * time.Second
-	sessionInfoPtr := &sessionInfo{
-		session:          session,
-		expiresTimestamp: time.Now().Add(d).Unix(),
-	}
+	session.expiry = time.Now().Add(d).Unix()
 	memoryMutex.Lock()
-	s.sessions[session.id] = sessionInfoPtr
+	s.sessions[session.id] = session
 	memoryMutex.Unlock()
 }
 
@@ -239,26 +249,34 @@ func (s *memoryStore) generateID(n int) (string, error) {
 	}
 }
 
-func (s *memoryStore) monitorExpiredSessions() {
-	ticker := time.NewTicker(time.Second)
+func (s *memoryStore) gc() {
+	ticker := time.NewTicker(s.gcInterval)
+	defer ticker.Stop()
+	var expired []string
+	// check the concurrency part: https://go.dev/blog/maps
+	// mutex: https://stackoverflow.com/a/19168242/16317008
 	for range ticker.C {
 		if s.isEmpty() {
 			continue
 		}
-		for k, info := range s.sessions {
-			if info.expiresTimestamp >= time.Now().Unix() {
-				s.delete(k)
+		memoryMutex.RLock()
+		for k, session := range s.sessions {
+			if session.expiry <= time.Now().Unix() {
+				expired = append(expired, k)
 			}
 		}
+		memoryMutex.RUnlock()
+		memoryMutex.Lock()
+		// Double-checked locking.
+		// User might have reset the max age of the session in the meantime.
+		for i := range expired {
+			v := s.sessions[expired[i]]
+			if v.expiry <= time.Now().Unix() {
+				delete(s.sessions, expired[i])
+			}
+		}
+		memoryMutex.Unlock()
 	}
-}
-
-func (s *memoryStore) delete(k string) {
-	// check the concurrency part: https://go.dev/blog/maps
-	// mutex: https://stackoverflow.com/a/19168242/16317008
-	memoryMutex.Lock()
-	defer memoryMutex.Unlock()
-	delete(s.sessions, k)
 }
 
 func (s *memoryStore) isEmpty() bool {

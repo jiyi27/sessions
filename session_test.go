@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestSessionValues(t *testing.T) {
+func TestMySession(t *testing.T) {
 	var req *http.Request
 	var rsp *httptest.ResponseRecorder
 	var hdr http.Header
@@ -53,7 +53,7 @@ func TestSessionValues(t *testing.T) {
 	}
 	// Test if the Values has been saved in last round
 	if session.Values["name"] != "Coco" || session.Values["age"] != 18 {
-		t.Errorf("Expected name=Coco,age=13; Got %v", session.Values)
+		t.Errorf("Expected name=Coco, age=13; Got %v", session.Values)
 	}
 	// Test if there is a deep copy for session
 	session.Values["name"] = "Bella"
@@ -62,8 +62,8 @@ func TestSessionValues(t *testing.T) {
 		t.Error("failed to get cookie")
 	}
 	memoryMutex.RLock()
-	if session.Values["name"] == store.sessions[c.Value].session.Values["name"] {
-		t.Errorf("No deep copy; Expected name=Coco; Got %v", store.sessions[c.Value].session.Values["name"])
+	if session.Values["name"] == store.sessions[c.Value].Values["name"] {
+		t.Errorf("No deep copy; Expected name=Coco; Got %v", store.sessions[c.Value].Values["name"])
 	}
 	memoryMutex.RUnlock()
 
