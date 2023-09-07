@@ -2,14 +2,40 @@
 
 An in-memory concurrent-safe package for go web sessions management. 
 
-There is no encryption in cookie, 
+We use a session-id to identify the session stored in the server, the session-id is transmitted as cookie between server and client.
+
+The actuall data are stored in server. Learn more about security: [Better security - Session ID in cookies vs. Encrypted cookie](https://security.stackexchange.com/questions/174334/better-security-session-id-in-cookies-vs-encrypted-cookie)
 
 ## Feature
-- 
+- Get all expired sessions, which enables do some stuff before session removed from store. 
 
-TODO:
-- session can accept a function type which will be executed when it expires
--
+```go
+// If you want get expired in future, pass true to second argument which is optional.
+// Otherwise just: store := NewMemoryStore(32)
+store := NewMemoryStore(32, true)
+session, _ := store.Get(r, "session-id")
+session.InsertValue("name", "Coco")
+session.Save(rsp)
+...
+// If you telled store you want get all session, 
+// you should make another goroutine to keep listen the channel, 
+// otherwise your expired session won't be removed from store.
+go func() {
+    expiredSessions := make(chan []*Session)
+    errSession := make(chan error)
+    go store.GetExpiredSessions(expiredSessions, errSession)
+    select {
+    case sessions := <-expiredSessions:
+        for _, session := range sessions {
+			// the code below will execute before expired session being removed.
+			// do someting you want.
+            fmt.Println(session.values)
+        }
+    case err := <-errSession:
+        // error handling
+    }
+}()
+```
 
 ## Usage
 
