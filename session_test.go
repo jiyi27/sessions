@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,7 +17,7 @@ func TestSession(t *testing.T) {
 	var cookies []string
 	var session *Session
 
-	store := NewMemoryStore(32)
+	store := NewMemoryStore(32, true)
 
 	// Round 1 ----------------------------------------------------------------
 
@@ -80,12 +81,82 @@ func TestSession(t *testing.T) {
 	if !session.GetCookieHttpOnly() {
 		t.Errorf("Expected http only = true; httponly=%v", session.GetCookieHttpOnly())
 	}
+
+	go func() {
+		expiredSessions := make(chan []*Session)
+		errSession := make(chan error)
+		go store.GetExpiredSessions(expiredSessions, errSession)
+		select {
+		case sessions := <-expiredSessions:
+			for _, session := range sessions {
+				fmt.Println(session.values)
+			}
+		case err := <-errSession:
+			t.Error(err)
+		}
+	}()
+
 	// Test if sessions are removed correctly
-	time.Sleep(3 * time.Second)
+	time.Sleep(5 * time.Second)
+
 	if session, err = store.Get(req, "session-key"); err != nil {
 		t.Fatalf("Error getting session: %v", err)
 	}
 	if !session.IsNew() {
 		t.Errorf("Expected session.IsNew() = true; Got session.IsNew=%v", session.IsNew())
 	}
+}
+
+// Learn more about benchmark:
+// https://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go
+
+func BenchmarkSession(b *testing.B) {
+	store := NewMemoryStore(32)
+	// The body function will be run in each goroutine.
+	b.RunParallel(func(pb *testing.PB) {
+		var req *http.Request
+		var rsp *httptest.ResponseRecorder
+		var hdr http.Header
+		var err error
+		var ok bool
+		var cookies []string
+		var session *Session
+		for pb.Next() {
+			req, _ = http.NewRequest("GET", "http://localhost:8080/", nil)
+			rsp = httptest.NewRecorder()
+			if session, err = store.Get(req, "session-key"); err != nil {
+				b.Fatalf("Error getting session: %v", err)
+			}
+			// Simulate user set information in session.
+			session.InsertValue("name", "Coco")
+			session.InsertValue("age", 18)
+			session.SetMaxAge(1)
+			session.Save(rsp)
+			hdr = rsp.Header()
+			cookies, ok = hdr["Set-Cookie"]
+			if !ok || len(cookies) != 1 {
+				b.Fatal("No cookies. Header:", hdr)
+			}
+			req, _ = http.NewRequest("GET", "http://localhost:8080/", nil)
+			// Simulate client send cookie that we've saved into the response in last round.
+			req.Header.Add("Cookie", cookies[0])
+			if session, err = store.Get(req, "session-key"); err != nil {
+				b.Fatalf("Error getting session: %v", err)
+			}
+			// Simulate user gets info from session.
+			session.IsNew()
+			_, _ = session.GetValueByKey("name")
+			_, _ = session.GetValueByKey("age")
+			// Simulate user changes the session.
+			err = session.ModifyValueByKey("name", "Bella")
+			session.SetCookieHttpOnly(true)
+			session.SetMaxAge(5)
+			session.Save(rsp)
+		}
+	})
+}
+
+func ExampleSession() {
+	fmt.Println("hello")
+	// Output: hell
 }
