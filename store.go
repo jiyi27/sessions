@@ -145,6 +145,7 @@ func (s *MemoryStore) gcWithExpired() {
 				copied, err := copySession(session)
 				if err != nil {
 					s.ExpiredSessionErr <- err
+					continue
 				}
 				expired = append(expired, copied)
 				delete(s.sessions, session.id)
@@ -160,7 +161,7 @@ func copySession(session *Session) (*Session, error) {
 	cs := NewSession(session.name, session.id, *session.options)
 	cs.values, err = DeepCopyMap(session.values)
 	if err != nil {
-		return nil, fmt.Errorf("failed to copy session: %v", err)
+		return nil, fmt.Errorf("failed to copy session %v: %v", session.id, err)
 	}
 	return cs, nil
 }

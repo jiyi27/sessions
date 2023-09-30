@@ -24,8 +24,7 @@ type Session struct {
 	name  string
 	id    string
 	isNew bool
-	// expiry is used for deleting expired
-	// session internally, user don't need to care.
+	// expiry is used for deleting expired session internally
 	expiry  int64
 	values  map[interface{}]interface{}
 	options *Options

@@ -24,11 +24,9 @@ func GenerateRandomString(n int) (string, error) {
 }
 
 // DeepCopyMap performs a deep copy of the given map m.
-// You should register for that type if you have nested map
-// e.g., if you have map[string]int{} as a value of a key,
-// then you need register: gob.Register(map[string]int{}) before call DeepCopyMap.
+//
+// learn more: https://davidzhu.xyz/post/golang/basics/014-gob-json-encoding/#27-gobregister-method
 func DeepCopyMap(m map[interface{}]interface{}) (map[interface{}]interface{}, error) {
-	gob.Register(map[interface{}]interface{}{})
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
 	dec := gob.NewDecoder(buf)
