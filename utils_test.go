@@ -108,7 +108,5 @@ func TestDeepCopyMap(t *testing.T) {
 		if !eq {
 			t.Errorf("original was mutated. test case: %d", i)
 		}
-		//fmt.Println(tc.original)
-		//fmt.Println(result)
 	}
 }
