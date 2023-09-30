@@ -6,14 +6,18 @@ import (
 	"time"
 )
 
-// NewMemoryStore returns a new MemoryStore.
-// Parameter length is the length of session id,
-// you should set it to 32~64, don't make it too big for better performance,
-// we save it as a key in a map.
-// Parameter enable is optional, default is false.
-// Check:
-func NewMemoryStore(length int, enable ...bool) *MemoryStore {
-	s := MemoryStore{
+type MemoryStore struct {
+	sessions   map[string]*Session
+	options    *Options
+	gcInterval time.Duration
+	idLength   int
+	// Only use these two channels when gc with expired session set
+	ExpiredSession    chan []*Session
+	ExpiredSessionErr chan error
+}
+
+func NewStore(options ...func(store *MemoryStore)) *MemoryStore {
+	s := &MemoryStore{
 		sessions: make(map[string]*Session),
 		options: &Options{
 			Path:     "/",
@@ -21,25 +25,44 @@ func NewMemoryStore(length int, enable ...bool) *MemoryStore {
 			SameSite: http.SameSiteDefaultMode,
 		},
 		gcInterval: time.Millisecond * 500,
-		idLength:   length,
-		ready:      make(chan []string),
-		done:       make(chan struct{}),
+		idLength:   16,
 	}
-	if len(enable) > 0 {
-		s.enable = true
+	for _, op := range options {
+		op(s)
 	}
-	go s.gc()
-	return &s
+	return s
 }
 
-type MemoryStore struct {
-	sessions   map[string]*Session
-	options    *Options
-	gcInterval time.Duration
-	idLength   int
-	ready      chan []string
-	done       chan struct{}
-	enable     bool
+func WithDefaultGc() func(*MemoryStore) {
+	return func(s *MemoryStore) {
+		go s.gc()
+	}
+}
+
+func WithExpiredGc() func(*MemoryStore) {
+	return func(s *MemoryStore) {
+		s.ExpiredSession = make(chan []*Session, 1)
+		s.ExpiredSessionErr = make(chan error, 1)
+		go s.gcWithExpired()
+	}
+}
+
+func WithIDLength(l int) func(*MemoryStore) {
+	return func(s *MemoryStore) {
+		s.idLength = l
+	}
+}
+
+func WithMaxAge(maxAge int) func(*MemoryStore) {
+	return func(s *MemoryStore) {
+		s.options.MaxAge = maxAge
+	}
+}
+
+func WithGCInterval(interval time.Duration) func(*MemoryStore) {
+	return func(s *MemoryStore) {
+		s.gcInterval = interval
+	}
 }
 
 // Get returns a session if exists, if it doesn't exist, create a new one.
@@ -97,71 +120,42 @@ func (s *MemoryStore) generateID() (string, error) {
 func (s *MemoryStore) gc() {
 	ticker := time.NewTicker(s.gcInterval)
 	defer ticker.Stop()
-	var expired []string
 	for range ticker.C {
-		if s.isEmpty() {
-			continue
-		}
-		// Drop useless elements in last round.
-		expired = expired[:0]
-		mutex.RLock()
+		mutex.Lock()
 		for k, session := range s.sessions {
 			if session.expiry <= time.Now().Unix() {
-				expired = append(expired, k)
-			}
-		}
-		mutex.RUnlock()
-		// No session expires.
-		if len(expired) == 0 {
-			continue
-		}
-		// Get expired sessions enabled, notify everytime.
-		if s.enable {
-			// notify & send data to channel
-			s.ready <- expired
-			// wait for the operation done
-			<-s.done
-		}
-		mutex.Lock()
-		// Double-checked locking.
-		// User might have reset the max age of the session in the meantime.
-		for i := range expired {
-			v := s.sessions[expired[i]]
-			if v.expiry <= time.Now().Unix() {
-				delete(s.sessions, expired[i])
+				delete(s.sessions, k)
 			}
 		}
 		mutex.Unlock()
 	}
 }
 
-func (s *MemoryStore) isEmpty() bool {
-	mutex.RLock()
-	defer mutex.RUnlock()
-	return len(s.sessions) == 0
-}
-
-func (s *MemoryStore) GetExpiredSessions(expiredSessions chan []*Session, errSession chan error) {
-	sessions := make([]*Session, 0)
-	// Block until the data is ready.
-	for expired := range s.ready {
-		for _, id := range expired {
-			mutex.RLock()
-			session, err := s.copySession(s.sessions[id])
-			mutex.RUnlock()
-			if err != nil {
-				errSession <- err
-				continue
+func (s *MemoryStore) gcWithExpired() {
+	ticker := time.NewTicker(s.gcInterval)
+	defer ticker.Stop()
+	expired := make([]*Session, 0)
+	for range ticker.C {
+		// Drop useless elements in last round.
+		expired = expired[:0]
+		mutex.Lock()
+		for _, session := range s.sessions {
+			if session.expiry <= time.Now().Unix() {
+				// Send copied expired session to user in case of data race
+				copied, err := copySession(session)
+				if err != nil {
+					s.ExpiredSessionErr <- err
+				}
+				expired = append(expired, copied)
+				delete(s.sessions, session.id)
 			}
-			sessions = append(sessions, session)
 		}
-		// Notify gc
-		s.done <- struct{}{}
-		expiredSessions <- sessions
+		mutex.Unlock()
+		s.ExpiredSession <- expired
 	}
 }
 
-func (s *MemoryStore) copySession(session *Session) (*Session, error) {
+func copySession(session *Session) (*Session, error) {
 	var err error
 	cs := NewSession(session.name, session.id, *session.options)
 	cs.values, err = DeepCopyMap(session.values)
