@@ -72,14 +72,10 @@ func (s *Session) getExpiry() int64 {
 }
 
 // GetValueByKey returns a value whose key is k in the map.
-func (s *Session) GetValueByKey(k interface{}) (interface{}, error) {
+func (s *Session) GetValueByKey(k interface{}) interface{} {
 	mutex.RLock()
 	defer mutex.RUnlock()
-	v, ok := s.values[k]
-	if !ok {
-		return nil, fmt.Errorf("failed to get value, no suchkey:%v", k)
-	}
-	return v, nil
+	return s.values[k]
 }
 
 // InsertValue
