@@ -16,7 +16,7 @@ type MemoryStore struct {
 	ExpiredSessionErr chan error
 }
 
-func NewStore(options ...func(store *MemoryStore)) *MemoryStore {
+func NewMemoryStore(options ...func(store *MemoryStore)) *MemoryStore {
 	s := &MemoryStore{
 		sessions: make(map[string]*Session),
 		options: &Options{
