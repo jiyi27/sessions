@@ -10,7 +10,7 @@ import (
 // Learn more about benchmark:
 // https://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go
 func BenchmarkStore(b *testing.B) {
-	store := NewStore(WithExpiredGc())
+	store := NewMemoryStore(WithExpiredGc())
 	go func() {
 		for {
 			select {
@@ -76,7 +76,7 @@ func TestStore(t *testing.T) {
 	var ok bool
 	var cookies []string
 	var session *Session
-	store := NewStore(WithExpiredGc())
+	store := NewMemoryStore(WithExpiredGc())
 	go func() {
 		for {
 			select {
