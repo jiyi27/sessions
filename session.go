@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -78,26 +77,13 @@ func (s *Session) GetValueByKey(k interface{}) interface{} {
 	return s.values[k]
 }
 
-// InsertValue
+// SetValue
 // You should call this function only when insert a new key into the map.
 // Do not use a slice, map or other incomparable types as k.
-func (s *Session) InsertValue(k, v interface{}) {
+func (s *Session) SetValue(k, v interface{}) {
 	mutex.RLock()
 	defer mutex.RUnlock()
 	s.values[k] = v
-}
-
-// ModifyValueByKey If the provided key exists in map,
-// modify the corresponding value stored.
-// Otherwise, return error.
-func (s *Session) ModifyValueByKey(k, v interface{}) error {
-	mutex.RLock()
-	defer mutex.RUnlock()
-	if _, ok := s.values[k]; !ok {
-		return fmt.Errorf("failed to set value, no such key:%v", k)
-	}
-	s.values[k] = v
-	return nil
 }
 
 // GetOptions Return a copy of Options of a Session value.
