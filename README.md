@@ -2,6 +2,10 @@
 
 An in-memory concurrent-safe package for go web session management.
 
+```shell
+$ go get -u github.com/shwezhu/sessions
+```
+
 ## feature
 
 Get expired sessions after removed from session store. The codes below will enable Store send expired session into `ExpiredSession` channel which is a field of struct `Store`:
