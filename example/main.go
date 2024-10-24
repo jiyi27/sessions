@@ -34,7 +34,7 @@ var store *sessions.MemoryStore
 
 func main() {
 	// You need specify the id length of a session, don't make it too big.
-	store = sessions.NewStore(sessions.WithDefaultGc())
+	store = NewMemoryStore(WithExpiredSessionTracking())
 	http.HandleFunc("/", handler)
 	http.HandleFunc("/favicon.ico", DoNothing)
 	log.Fatal(http.ListenAndServe(":8080", nil))

@@ -10,7 +10,7 @@ import (
 // Learn more about benchmark:
 // https://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go
 func BenchmarkStore(b *testing.B) {
-	store := NewMemoryStore(WithExpiredGc())
+	store := NewMemoryStore(WithExpiredSessionTracking())
 	go func() {
 		for {
 			select {
@@ -40,8 +40,8 @@ func BenchmarkStore(b *testing.B) {
 				b.Fatalf("Error getting session: %v", err)
 			}
 			// Simulate user set information in session.
-			session.InsertValue("name", "Coco")
-			session.InsertValue("age", 18)
+			session.SetValue("name", "Coco")
+			session.SetValue("age", 18)
 			session.SetMaxAge(1)
 			session.Save(rsp)
 			hdr = rsp.Header()
@@ -57,10 +57,10 @@ func BenchmarkStore(b *testing.B) {
 			}
 			// Simulate user gets info from session.
 			session.IsNew()
-			_, _ = session.GetValueByKey("name")
-			_, _ = session.GetValueByKey("age")
+			_ = session.GetValueByKey("name")
+			_ = session.GetValueByKey("age")
 			// Simulate user changes the session.
-			err = session.ModifyValueByKey("name", "Bella")
+			session.SetValue("name", "Bella")
 			session.SetCookieHttpOnly(true)
 			session.SetMaxAge(3)
 			session.Save(rsp)
@@ -76,7 +76,7 @@ func TestStore(t *testing.T) {
 	var ok bool
 	var cookies []string
 	var session *Session
-	store := NewMemoryStore(WithExpiredGc())
+	store := NewMemoryStore(WithExpiredSessionTracking())
 	go func() {
 		for {
 			select {
@@ -99,8 +99,8 @@ func TestStore(t *testing.T) {
 	if session, err = store.Get(req, "session-key"); err != nil {
 		t.Fatalf("Error getting session: %v", err)
 	}
-	session.InsertValue("name", "Coco")
-	session.InsertValue("age", 18)
+	session.SetValue("name", "Coco")
+	session.SetValue("age", 18)
 	session.SetMaxAge(3)
 	session.Save(rsp)
 	hdr = rsp.Header()
@@ -129,13 +129,10 @@ func TestStore(t *testing.T) {
 	if session.IsNew() {
 		t.Fatal("gc deletes session incorrectly")
 	}
-	_, err1 := session.GetValueByKey("name")
-	_, err2 := session.GetValueByKey("age")
-	if err1 != nil || err2 != nil {
-		t.Fatal("Error the values has not been saved successfully")
-	}
+	_ = session.GetValueByKey("name")
+	_ = session.GetValueByKey("age")
 	// Modify value for next round test.
-	err = session.ModifyValueByKey("name", "Bella")
+	session.SetValue("name", "Bella")
 	session.SetCookieHttpOnly(true)
 	session.Save(rsp)
 
@@ -146,7 +143,7 @@ func TestStore(t *testing.T) {
 	if session, err = store.Get(req, "session-key"); err != nil {
 		t.Fatalf("Error getting session: %v", err)
 	}
-	name, err := session.GetValueByKey("name")
+	name := session.GetValueByKey("name")
 	if name != "Bella" {
 		t.Errorf("Expected name = Bella; Got name=%v", name)
 	}

@@ -27,23 +27,26 @@ func NewMemoryStore(options ...func(store *MemoryStore)) *MemoryStore {
 		gcInterval: time.Millisecond * 500,
 		idLength:   16,
 	}
+
+	// Apply custom options first
 	for _, op := range options {
 		op(s)
 	}
+
+	// Start default gc if ExpiredSession channel is not initialized
+	if s.ExpiredSession == nil {
+		go s.gc()
+	}
+
 	return s
 }
 
-func WithDefaultGc() func(*MemoryStore) {
-	return func(s *MemoryStore) {
-		go s.gc()
-	}
-}
-
-func WithExpiredGc() func(*MemoryStore) {
+// WithExpiredSessionTracking enables tracking of expired sessions through channels
+func WithExpiredSessionTracking() func(*MemoryStore) {
 	return func(s *MemoryStore) {
 		s.ExpiredSession = make(chan []*Session, 1)
 		s.ExpiredSessionErr = make(chan error, 1)
-		go s.gcWithExpired()
+		go s.gcWithTracking()
 	}
 }
 
@@ -131,7 +134,7 @@ func (s *MemoryStore) gc() {
 	}
 }
 
-func (s *MemoryStore) gcWithExpired() {
+func (s *MemoryStore) gcWithTracking() {
 	ticker := time.NewTicker(s.gcInterval)
 	defer ticker.Stop()
 	expired := make([]*Session, 0)
