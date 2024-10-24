@@ -26,14 +26,14 @@ func GenerateRandomString(n int) (string, error) {
 // DeepCopyMap performs a deep copy of the given map m.
 //
 // learn more: https://davidzhu.xyz/post/golang/basics/014-gob-json-encoding/#27-gobregister-method
-func DeepCopyMap(m map[interface{}]interface{}) (map[interface{}]interface{}, error) {
+func DeepCopyMap(m map[string]interface{}) (map[string]interface{}, error) {
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
 	dec := gob.NewDecoder(buf)
 	if err := enc.Encode(m); err != nil {
 		return nil, fmt.Errorf("failed to copy map: %v", err)
 	}
-	result := make(map[interface{}]interface{})
+	result := make(map[string]interface{})
 	if err := dec.Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to copy map: %v", err)
 	}

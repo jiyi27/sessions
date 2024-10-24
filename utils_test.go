@@ -13,60 +13,60 @@ import (
 func TestDeepCopyMap(t *testing.T) {
 	testCases := []struct {
 		// original and expectedOriginal are the same value in each test case.
-		original         map[interface{}]interface{}
-		transformer      func(m map[interface{}]interface{}) map[interface{}]interface{}
-		expectedCopy     map[interface{}]interface{}
-		expectedOriginal map[interface{}]interface{}
+		original         map[string]interface{}
+		transformer      func(m map[string]interface{}) map[string]interface{}
+		expectedCopy     map[string]interface{}
+		expectedOriginal map[string]interface{}
 	}{
 		// reassignment of entire map, should be okay even without deep-copy.
 		{
 			original: nil,
-			transformer: func(m map[interface{}]interface{}) map[interface{}]interface{} {
-				return map[interface{}]interface{}{}
+			transformer: func(m map[string]interface{}) map[string]interface{} {
+				return map[string]interface{}{}
 			},
-			expectedCopy:     map[interface{}]interface{}{},
+			expectedCopy:     map[string]interface{}{},
 			expectedOriginal: nil,
 		},
 		// mutation of map
 		{
-			original: map[interface{}]interface{}{
+			original: map[string]interface{}{
 				"id":  "0007",
 				"age": 3,
 			},
-			transformer: func(m map[interface{}]interface{}) map[interface{}]interface{} {
+			transformer: func(m map[string]interface{}) map[string]interface{} {
 				m["id"] = "0006"
 				return m
 			},
-			expectedCopy: map[interface{}]interface{}{
+			expectedCopy: map[string]interface{}{
 				"id":  "0006",
 				"age": 3,
 			},
-			expectedOriginal: map[interface{}]interface{}{
+			expectedOriginal: map[string]interface{}{
 				"id":  "0007",
 				"age": 3,
 			},
 		},
 		// mutation of nested maps
 		{
-			original: map[interface{}]interface{}{
+			original: map[string]interface{}{
 				"id": "0007",
 				"cats": map[string]int{
 					"kitten": 2,
 					"milo":   1,
 				},
 			},
-			transformer: func(m map[interface{}]interface{}) map[interface{}]interface{} {
+			transformer: func(m map[string]interface{}) map[string]interface{} {
 				m["cats"].(map[string]int)["kitten"] = 3
 				return m
 			},
-			expectedCopy: map[interface{}]interface{}{
+			expectedCopy: map[string]interface{}{
 				"id": "0007",
 				"cats": map[string]int{
 					"kitten": 3,
 					"milo":   1,
 				},
 			},
-			expectedOriginal: map[interface{}]interface{}{
+			expectedOriginal: map[string]interface{}{
 				"id": "0007",
 				"cats": map[string]int{
 					"kitten": 2,
@@ -76,17 +76,17 @@ func TestDeepCopyMap(t *testing.T) {
 		},
 		// mutation of nested slices
 		{
-			original: map[interface{}]interface{}{
+			original: map[string]interface{}{
 				"cats": []string{"Coco", "Bella"},
 			},
-			transformer: func(m map[interface{}]interface{}) map[interface{}]interface{} {
+			transformer: func(m map[string]interface{}) map[string]interface{} {
 				m["cats"].([]string)[0] = "Luna"
 				return m
 			},
-			expectedCopy: map[interface{}]interface{}{
+			expectedCopy: map[string]interface{}{
 				"cats": []string{"Luna", "Bella"},
 			},
-			expectedOriginal: map[interface{}]interface{}{
+			expectedOriginal: map[string]interface{}{
 				"cats": []string{"Coco", "Bella"},
 			},
 		},

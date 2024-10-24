@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+	"sync"
 )
 
 type MemoryStore struct {
+	mu         sync.RWMutex
 	sessions   map[string]*Session
 	options    *Options
 	gcInterval time.Duration
@@ -74,13 +76,12 @@ func (s *MemoryStore) Get(r *http.Request, name string) (*Session, error) {
 		return nil, fmt.Errorf("sessions: invalid character in cookie name: %s", name)
 	}
 	if c, err := r.Cookie(name); err == nil {
-		// if cookie exists in the request
-		// and check if there is a corresponding session in MemoryStore.
-		mutex.RLock()
+		// check if there is a corresponding session in MemoryStore.
+		s.mu.RLock()
 		session, ok := s.sessions[c.Value]
-		mutex.RUnlock()
+		s.mu.RUnlock()
 		if ok {
-			session.SetIsNew(false)
+			session.isNew = false
 			return session, nil
 		}
 	}
@@ -97,9 +98,9 @@ func (s *MemoryStore) New(name string) (*Session, error) {
 	}
 	session := NewSession(name, id, *s.options)
 	// saves session into underlying store.
-	mutex.Lock()
+	s.mu.Lock()
 	s.sessions[session.id] = session
-	mutex.Unlock()
+	s.mu.Unlock()
 	return session, nil
 }
 
@@ -109,9 +110,9 @@ func (s *MemoryStore) generateID() (string, error) {
 		if id, err := GenerateRandomString(s.idLength); err != nil {
 			return "", err
 		} else {
-			mutex.RLock()
+			s.mu.RLock()
 			_, ok := s.sessions[id]
-			mutex.RUnlock()
+			s.mu.RUnlock()
 			if !ok {
 				return id, nil
 			}
@@ -124,13 +125,13 @@ func (s *MemoryStore) gc() {
 	ticker := time.NewTicker(s.gcInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		mutex.Lock()
+		s.mu.Lock()
 		for k, session := range s.sessions {
 			if session.expiry <= time.Now().Unix() {
 				delete(s.sessions, k)
 			}
 		}
-		mutex.Unlock()
+		s.mu.Unlock()
 	}
 }
 
@@ -141,7 +142,7 @@ func (s *MemoryStore) gcWithTracking() {
 	for range ticker.C {
 		// Drop useless elements in last round.
 		expired = expired[:0]
-		mutex.Lock()
+		s.mu.Lock()
 		for _, session := range s.sessions {
 			if session.expiry <= time.Now().Unix() {
 				// Send copied expired session to user in case of data race
@@ -154,7 +155,7 @@ func (s *MemoryStore) gcWithTracking() {
 				delete(s.sessions, session.id)
 			}
 		}
-		mutex.Unlock()
+		s.mu.Unlock()
 		s.ExpiredSession <- expired
 	}
 }
