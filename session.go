@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -18,7 +19,7 @@ func NewSession(name, id string, options Options) *Session {
 }
 
 type Session struct {
-	mu      sync.RWMutex
+	mu    sync.RWMutex
 	name  string
 	id    string
 	isNew bool
@@ -26,6 +27,58 @@ type Session struct {
 	expiry  int64
 	values  map[string]interface{}
 	options *Options
+}
+
+type serializableSession struct {
+	Name    string                 `json:"name"`
+	ID      string                 `json:"id"`
+	IsNew   bool                   `json:"is_new"`
+	Expiry  int64                  `json:"expiry"`
+	Values  map[string]interface{} `json:"values"`
+	Options *Options               `json:"options"`
+}
+
+type SessionSerializer interface {
+	Serialize(session *Session) ([]byte, error)
+	Deserialize(data []byte, session *Session) error
+}
+
+type JSONSerializer struct{}
+
+func (s *JSONSerializer) Serialize(session *Session) ([]byte, error) {
+	session.mu.RLock()
+	defer session.mu.RUnlock()
+
+	serializable := serializableSession{
+		Name:    session.name,
+		ID:      session.id,
+		IsNew:   session.isNew,
+		Expiry:  session.expiry,
+		Values:  session.values,
+		Options: session.options,
+	}
+
+	return json.Marshal(serializable)
+}
+
+func (s *JSONSerializer) Deserialize(data []byte, session *Session) error {
+	var serializable serializableSession
+
+	if err := json.Unmarshal(data, &serializable); err != nil {
+		return err
+	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	session.name = serializable.Name
+	session.id = serializable.ID
+	session.isNew = serializable.IsNew
+	session.expiry = serializable.Expiry
+	session.values = serializable.Values
+	session.options = serializable.Options
+
+	return nil
 }
 
 // Save saves session into response.
