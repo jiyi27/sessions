@@ -1,6 +1,8 @@
 ## sessions-go
 
-An in-memory concurrent-safe package for go web session management.
+An in-memory concurrent-safe package for go web session management. 
+
+This session management library primarily utilizes an in-memory store to ensure optimal performance and rapid access. While a Redis store is also supported as an alternative, the implementation of mutex locks for each session operation can lead to unnecessary resource consumption when using Redis. 
 
 ```shell
 $ go get -u github.com/shwezhu/sessions
