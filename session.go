@@ -9,21 +9,21 @@ import (
 
 func NewSession(name, id string, options Options) *Session {
 	return &Session{
-		name:    name,
-		id:      id,
-		isNew:   true,
-		expiry:  time.Now().Add(time.Duration(options.MaxAge) * time.Second).Unix(),
+		name:   name,
+		id:     id,
+		isNew:  true,
+		expiry: time.Now().Add(time.Duration(options.MaxAge) * time.Second).Unix(),
+		// 如果 values 使用 sync.Map, 序列化/反序列化需要额外的转换步骤, 保持现在的实现就很好
 		values:  make(map[string]interface{}),
 		options: &options,
 	}
 }
 
 type Session struct {
-	mu    sync.RWMutex
-	name  string
-	id    string
-	isNew bool
-	// expiry is used for deleting expired session internally
+	mu      sync.RWMutex
+	name    string
+	id      string
+	isNew   bool
 	expiry  int64
 	values  map[string]interface{}
 	options *Options
@@ -113,14 +113,6 @@ func (s *Session) SetIsNew(isNew bool) {
 	defer s.mu.Unlock()
 	s.isNew = isNew
 }
-
-// // getExpiry used by MemoryStore for deleting expired session internally.
-// // Users don't need to care about this function.
-// func (s *Session) getExpiry() int64 {
-// 	mutex.RLock()
-// 	defer mutex.RUnlock()
-// 	return s.expiry
-// }
 
 // GetValueByKey returns a value whose key is k in the map.
 func (s *Session) GetValueByKey(k string) interface{} {

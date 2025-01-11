@@ -1,69 +1,50 @@
 package sessions
 
 import (
+	"fmt"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
 
-// Learn more about benchmark:
-// https://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go
-func BenchmarkStore(b *testing.B) {
-	store := NewMemoryStore(WithExpiredSessionTracking())
-	go func() {
-		for {
-			select {
-			case sessions := <-store.ExpiredSession:
-				b.Log(len(store.sessions))
-				for _, se := range sessions {
-					b.Log(se.values)
-				}
-			case errSe := <-store.ExpiredSessionErr:
-				b.Error(errSe)
-			}
-		}
-	}()
-	// The body function will be run in each goroutine.
+// BenchmarkMemoryStore_Concurrent tests the concurrent performance
+func BenchmarkMemoryStore_ConcurrentAccess(b *testing.B) {
+	store := NewMemoryStore(
+		WithMaxAge(3600),
+		WithGCInterval(time.Second),
+	)
+
+	// 先创建一些共享的 sessions
+	sessions := make([]*Session, 100)
+	for i := 0; i < 100; i++ {
+		session, _ := store.New(fmt.Sprintf("test_session_%d", i))
+		sessions[i] = session
+	}
+
+	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
-		var req *http.Request
-		var rsp *httptest.ResponseRecorder
-		var hdr http.Header
-		var err error
-		var ok bool
-		var cookies []string
-		var session *Session
+		// 每个 goroutine 创建自己的 request
+		req := httptest.NewRequest("GET", "http://example.com", nil)
+
 		for pb.Next() {
-			req, _ = http.NewRequest("GET", "http://localhost:8080/", nil)
-			rsp = httptest.NewRecorder()
-			if session, err = store.Get(req, "session-key"); err != nil {
-				b.Fatalf("Error getting session: %v", err)
+			// 随机选择一个已存在的 session
+			idx := rand.Intn(len(sessions))
+			session := sessions[idx]
+
+			// 设置 cookie
+			cookie := &http.Cookie{
+				Name:  session.name,
+				Value: session.id,
 			}
-			// Simulate user set information in session.
-			session.SetValue("name", "Coco")
-			session.SetValue("age", 18)
-			session.SetMaxAge(1)
-			session.Save(rsp)
-			hdr = rsp.Header()
-			cookies, ok = hdr["Set-Cookie"]
-			if !ok || len(cookies) != 1 {
-				b.Fatal("No cookies. Header:", hdr)
+			req.Header.Set("Cookie", cookie.String())
+
+			// 并发读取同一个 session
+			_, err := store.Get(req, session.name)
+			if err != nil {
+				b.Fatal(err)
 			}
-			req, _ = http.NewRequest("GET", "http://localhost:8080/", nil)
-			// Simulate client send cookie that we've saved into the response in last round.
-			req.Header.Add("Cookie", cookies[0])
-			if session, err = store.Get(req, "session-key"); err != nil {
-				b.Fatalf("Error getting session: %v", err)
-			}
-			// Simulate user gets info from session.
-			session.IsNew()
-			_ = session.GetValueByKey("name")
-			_ = session.GetValueByKey("age")
-			// Simulate user changes the session.
-			session.SetValue("name", "Bella")
-			session.SetCookieHttpOnly(true)
-			session.SetMaxAge(3)
-			session.Save(rsp)
 		}
 	})
 }
@@ -76,20 +57,7 @@ func TestStore(t *testing.T) {
 	var ok bool
 	var cookies []string
 	var session *Session
-	store := NewMemoryStore(WithExpiredSessionTracking())
-	go func() {
-		for {
-			select {
-			case sessions := <-store.ExpiredSession:
-				t.Log(len(store.sessions))
-				for _, se := range sessions {
-					t.Log(se.values)
-				}
-			case errSe := <-store.ExpiredSessionErr:
-				t.Error(errSe)
-			}
-		}
-	}()
+	store := NewMemoryStore()
 
 	// Round 1 ----------------------------------------------------------------
 
