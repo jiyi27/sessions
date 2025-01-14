@@ -8,7 +8,7 @@ import "net/http"
 type Options struct {
 	Path     string
 	Domain   string
-	MaxAge   int // seconds
+	MaxAge   int // in seconds
 	Secure   bool
 	HttpOnly bool
 	SameSite http.SameSite

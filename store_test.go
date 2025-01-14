@@ -35,13 +35,13 @@ func BenchmarkMemoryStore_ConcurrentAccess(b *testing.B) {
 
 			// 设置 cookie
 			cookie := &http.Cookie{
-				Name:  session.name,
-				Value: session.id,
+				Name:  session.data.Name,
+				Value: session.data.ID,
 			}
 			req.Header.Set("Cookie", cookie.String())
 
 			// 并发读取同一个 session
-			_, err := store.Get(req, session.name)
+			_, err := store.Get(req, session.data.Name)
 			if err != nil {
 				b.Fatal(err)
 			}

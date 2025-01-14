@@ -69,7 +69,7 @@ func (s *MemoryStore) Get(r *http.Request, name string) (*Session, error) {
 		session, ok := s.sessions[c.Value]
 		s.mutex.RUnlock()
 		if ok {
-			session.isNew = false
+			session.data.IsNew = false
 			return session, nil
 		}
 	}
@@ -87,7 +87,7 @@ func (s *MemoryStore) New(name string) (*Session, error) {
 	session := NewSession(name, id, *s.options)
 	// saves session into underlying store
 	s.mutex.Lock()
-	s.sessions[session.id] = session
+	s.sessions[session.data.ID] = session
 	s.mutex.Unlock()
 	return session, nil
 }
@@ -116,7 +116,7 @@ func (s *MemoryStore) gc() {
 	for range ticker.C {
 		s.mutex.Lock()
 		for k, session := range s.sessions {
-			if session.expiry <= time.Now().Unix() {
+			if session.data.Expiry <= time.Now().Unix() {
 				delete(s.sessions, k)
 			}
 		}

@@ -30,8 +30,8 @@ func TestRedisStore_Get(t *testing.T) {
 	session, err := store.Get(req, "test_session")
 	assert.NoError(t, err)
 	assert.NotNil(t, session)
-	assert.Equal(t, sessionID, session.id)
-	assert.False(t, session.isNew)
+	assert.Equal(t, sessionID, session.data.ID)
+	assert.False(t, session.data.IsNew)
 }
 
 func TestRedisStore_New(t *testing.T) {
@@ -41,11 +41,11 @@ func TestRedisStore_New(t *testing.T) {
 	session, err := store.New("new_session")
 	assert.NoError(t, err)
 	assert.NotNil(t, session)
-	assert.Equal(t, "new_session", session.name)
-	assert.True(t, session.isNew)
+	assert.Equal(t, "new_session", session.data.Name)
+	assert.True(t, session.data.IsNew)
 
 	// 验证新会话是否已保存到 Redis
-	data, err := client.Get(context.Background(), session.id).Result()
+	data, err := client.Get(context.Background(), session.data.ID).Result()
 	assert.NoError(t, err)
 	assert.NotEmpty(t, data)
 }
