@@ -9,24 +9,24 @@ import (
 
 func NewSession(name, id string, options Options) *Session {
 	return &Session{
-		name:   name,
-		id:     id,
-		isNew:  true,
-		expiry: time.Now().Add(time.Duration(options.MaxAge) * time.Second).Unix(),
-		// 如果 values 使用 sync.Map, 序列化/反序列化需要额外的转换步骤, 保持现在的实现就很好
+		name:    name,
+		id:      id,
+		isNew:   true,
+		expiry:  time.Now().Add(time.Duration(options.MaxAge) * time.Second).Unix(),
 		values:  make(map[string]interface{}),
 		options: &options,
 	}
 }
 
 type Session struct {
-	mu      sync.RWMutex
 	name    string
 	id      string
 	isNew   bool
 	expiry  int64
-	values  map[string]interface{}
-	options *Options
+	values  map[string]interface{} // sync.Map 对 redis 存储支持不友好, 序列化/反序列化需要额外的转换步骤
+	options *Options               // cookie 相关配置
+
+	mutex sync.RWMutex
 }
 
 type serializableSession struct {
@@ -46,8 +46,8 @@ type SessionSerializer interface {
 type JSONSerializer struct{}
 
 func (s *JSONSerializer) Serialize(session *Session) ([]byte, error) {
-	session.mu.RLock()
-	defer session.mu.RUnlock()
+	session.mutex.RLock()
+	defer session.mutex.RUnlock()
 
 	serializable := serializableSession{
 		Name:    session.name,
@@ -68,8 +68,8 @@ func (s *JSONSerializer) Deserialize(data []byte, session *Session) error {
 		return err
 	}
 
-	session.mu.Lock()
-	defer session.mu.Unlock()
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
 
 	session.name = serializable.Name
 	session.id = serializable.ID
@@ -84,40 +84,40 @@ func (s *JSONSerializer) Deserialize(data []byte, session *Session) error {
 // Save saves session into response.
 // You should call this function whenever you modify the session.
 func (s *Session) Save(w http.ResponseWriter) {
-	s.mu.RLock()
+	s.mutex.RLock()
 	opts := *s.options
-	s.mu.RUnlock()
+	s.mutex.RUnlock()
 	http.SetCookie(w, NewCookie(s.name, s.id, &opts))
 }
 
 func (s *Session) GetID() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.id
 }
 
 func (s *Session) GetName() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.name
 }
 
 func (s *Session) IsNew() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.isNew
 }
 
 func (s *Session) SetIsNew(isNew bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.isNew = isNew
 }
 
 // GetValueByKey returns a value whose key is k in the map.
 func (s *Session) GetValueByKey(k string) interface{} {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.values[k]
 }
 
@@ -125,23 +125,23 @@ func (s *Session) GetValueByKey(k string) interface{} {
 // You should call this function only when insert a new key into the map.
 // Do not use a slice, map or other incomparable types as k.
 func (s *Session) SetValue(k string, v interface{}) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.values[k] = v
 }
 
 // GetOptions Return a copy of Options of a Session value.
 // In case of data race.
 func (s *Session) GetOptions() Options {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return *s.options
 }
 
 // SetMaxAge sets the MaxAge of a session.
 func (s *Session) SetMaxAge(seconds int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.options.MaxAge = seconds
 	// Set expiresTimestamp for deleting expired session.
 	// Users don't need to care expiresTimestamp field of a session.
@@ -149,67 +149,67 @@ func (s *Session) SetMaxAge(seconds int) {
 }
 
 func (s *Session) SetCookiePath(path string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.options.Path = path
 }
 
 func (s *Session) SetCookieDomain(domain string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.options.Domain = domain
 }
 
 func (s *Session) SetCookieSecure(secure bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.options.Secure = secure
 }
 
 func (s *Session) SetCookieHttpOnly(ho bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.options.HttpOnly = ho
 }
 
 func (s *Session) SetCookieSameSite(ss http.SameSite) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.options.SameSite = ss
 }
 
 func (s *Session) GetMaxAge() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.options.MaxAge
 }
 
 func (s *Session) GetCookiePath() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.options.Path
 }
 
 func (s *Session) GetCookieDomain() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.options.Domain
 }
 
 func (s *Session) GetCookieSecure() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.options.Secure
 }
 
 func (s *Session) GetCookieHttpOnly() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.options.HttpOnly
 }
 
 func (s *Session) GetCookieSameSite() http.SameSite {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	return s.options.SameSite
 }

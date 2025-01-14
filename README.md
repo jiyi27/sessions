@@ -5,44 +5,12 @@ An in-memory concurrent-safe package for go web session management.
 This session management library primarily utilizes an in-memory store to ensure optimal performance and rapid access. While a Redis store is also supported as an alternative, the implementation of mutex locks for each session operation can lead to unnecessary resource consumption when using Redis. 
 
 ```shell
-$ go get -u github.com/shwezhu/sessions
-```
-
-## feature
-
-Get expired sessions after removed from session store. The codes below will enable Store send expired session into `ExpiredSession` channel which is a field of struct `Store`:
-
-```go
-store := NewStore(WithExpiredGc())
-```
-
-e.g.,
-```go
-store := NewStore(WithExpiredGc())
-session, _ := store.Get(r, "session-id")
-session.InsertValue("name", "Coco")
-session.Save(rsp)
-...
-// If you telled store you want get expired session,
-// you should use another goroutine to keep listen the channel,
-go func() {
-	for {
-		select {
-		case sessions := <-store.ExpiredSession:
-			for _, se := range sessions {
-				b.Log(se.values)
-			}
-		case errSe := <-store.ExpiredSessionErr:
-			b.Error(errSe)
-		}
-	}
-}()
+$ go get -u github.com/jiyi27/sessions
 ```
 
 ## usage
 
 ```go
-func doNothing(_ http.ResponseWriter, _ *http.Request) {}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	// Get will return a cached session if exists, if not return a new one.
@@ -64,14 +32,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprint(w, fmt.Sprintf("hello %v\n", name))
 }
 
-// You just need only one store instance on global.
+// store instance globally
 var store *sessions.MemoryStore
 
 func main() {
 	// You need specify the id length of a session, don't make it too big.
-	store := NewStore(WithDefaultGc())
+	store := NewStore()
 	http.HandleFunc("/", handler)
-	http.HandleFunc("/favicon.ico", doNothing)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 ```

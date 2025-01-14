@@ -6,10 +6,9 @@ import "net/http"
 //
 // Fields are a subset of http.Cookie fields.
 type Options struct {
-	Path   string
-	Domain string
-	// MaxAge is specified in seconds
-	MaxAge   int
+	Path     string
+	Domain   string
+	MaxAge   int // seconds
 	Secure   bool
 	HttpOnly bool
 	SameSite http.SameSite

@@ -2,10 +2,11 @@ package sessions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
-	
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -83,7 +84,7 @@ func (s *RedisStore) Get(r *http.Request, name string) (*Session, error) {
 			}
 			session.isNew = false
 			return session, nil
-		} else if err == redis.Nil {
+		} else if errors.Is(err, redis.Nil) {
 			return s.New(name)
 		} else {
 			return nil, err
