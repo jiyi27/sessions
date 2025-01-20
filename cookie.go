@@ -13,7 +13,7 @@ func NewCookie(name, value string, options *Options) *http.Cookie {
 	cookie := newCookieFromOptions(name, value, options)
 	if options.MaxAge > 0 {
 		// This is a type conversion: convert 'int' to 'time.Duration' type which is 'int64'
-		d := time.Duration(options.MaxAge) * time.Second
+		d := options.MaxAge * time.Second
 		cookie.Expires = time.Now().Add(d)
 	} else if options.MaxAge < 0 {
 		// Set it to the past to expire now.
@@ -32,7 +32,7 @@ func newCookieFromOptions(name, value string, options *Options) *http.Cookie {
 		// Max-Age is relative to the time of setting, Expiration = Tsetting + Max-Age
 		// So don't need to switch time zone
 		// https://stackoverflow.com/a/35729939/16317008
-		MaxAge:   options.MaxAge,
+		MaxAge:   int(options.MaxAge),
 		Secure:   options.Secure,
 		HttpOnly: options.HttpOnly,
 		SameSite: options.SameSite,

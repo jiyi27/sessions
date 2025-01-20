@@ -93,7 +93,7 @@ func TestDeepCopyMap(t *testing.T) {
 	}
 	gob.Register(map[string]int{})
 	for i, tc := range testCases {
-		result, err := DeepCopyMap(tc.original)
+		result, err := deepCopyMap(tc.original)
 		if err != nil {
 			t.Fatalf("error happens: %v, in test case: %d", err, i)
 		}

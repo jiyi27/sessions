@@ -95,7 +95,7 @@ func (s *Session) GetOptions() Options {
 func (s *Session) SetMaxAge(seconds int) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	s.data.Options.MaxAge = seconds
+	s.data.Options.MaxAge = time.Duration(seconds)
 	// Set expiresTimestamp for deleting expired session.
 	// Users don't need to care expiresTimestamp field of a session.
 	s.data.Expiry = time.Now().Add(time.Duration(seconds) * time.Second).Unix()
@@ -134,7 +134,7 @@ func (s *Session) SetCookieSameSite(sameSite http.SameSite) {
 func (s *Session) GetMaxAge() int {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	return s.data.Options.MaxAge
+	return int(s.data.Options.MaxAge)
 }
 
 func (s *Session) GetCookiePath() string {

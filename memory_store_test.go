@@ -11,10 +11,7 @@ import (
 
 // BenchmarkMemoryStore_Concurrent tests the concurrent performance
 func BenchmarkMemoryStore_ConcurrentAccess(b *testing.B) {
-	store := NewMemoryStore(
-		WithMaxAge(3600),
-		WithGCInterval(time.Second),
-	)
+	store, _ := NewMemoryStore()
 
 	// 先创建一些共享的 sessions
 	sessions := make([]*Session, 100)
@@ -57,7 +54,7 @@ func TestStore(t *testing.T) {
 	var ok bool
 	var cookies []string
 	var session *Session
-	store := NewMemoryStore()
+	store, _ := NewMemoryStore()
 
 	// Round 1 ----------------------------------------------------------------
 

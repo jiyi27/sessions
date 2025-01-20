@@ -1,125 +1,52 @@
 package sessions
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
-	"sync"
-	"time"
 )
 
-type MemoryStore struct {
-	mutex      sync.RWMutex
-	sessions   map[string]*Session
-	options    *Options
-	gcInterval time.Duration
-	idLength   int
+// Store interface defines the contract for session storage implementations
+type Store interface {
+	// Get retrieves an existing session or creates a new one
+	// Returns error if the cookie name is invalid or if any other error occurs
+	Get(r *http.Request, name string) (*Session, error)
+
+	// New creates a new session with the given name
+	// Returns error if session ID generation fails or if any other error occurs
+	New(name string) (*Session, error)
+
+	// Save persists the session data to the store
+	// Returns error if serialization or storage operation fails
+	Save(session *Session) error
+
+	// Delete removes the session from the store
+	// Returns error if the deletion operation fails
+	Delete(session *Session) error
 }
 
-// NewMemoryStore creates and returns a new MemoryStore
-// Factory pattern and functional options pattern are used here
-func NewMemoryStore(options ...func(store *MemoryStore)) *MemoryStore {
-	s := &MemoryStore{
-		sessions: make(map[string]*Session),
-		options: &Options{
-			Path:     "/",
-			MaxAge:   60,
-			SameSite: http.SameSiteDefaultMode,
-		},
-		gcInterval: time.Millisecond * 500,
-		idLength:   16,
-	}
-
-	// Apply custom options
-	for _, op := range options {
-		op(s)
-	}
-
-	go s.gc()
-	return s
+// baseStore implements common functionality for all stores
+type baseStore struct {
+	options  *Options // default cookie options value when creating a new session
+	idLength int      // length of the session ID
 }
 
-// Option functions for customizing MemoryStore
+// NewBaseStore creates a new baseStore with default options
+func newBaseStore(opts *Options, idLen int) (*baseStore, error) {
+	if opts == nil {
+		opts = defaultOptions()
+	}
 
-func WithIDLength(l int) func(*MemoryStore) {
-	return func(s *MemoryStore) {
-		s.idLength = l
+	if err := opts.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid options: %w", err)
 	}
-}
 
-func WithMaxAge(maxAge int) func(*MemoryStore) {
-	return func(s *MemoryStore) {
-		s.options.MaxAge = maxAge
+	if idLen <= 0 {
+		return nil, errors.New("id length must be positive")
 	}
-}
 
-func WithGCInterval(interval time.Duration) func(*MemoryStore) {
-	return func(s *MemoryStore) {
-		s.gcInterval = interval
-	}
-}
-
-// Get returns a session if exists, if it doesn't exist, create a new one.
-func (s *MemoryStore) Get(r *http.Request, name string) (*Session, error) {
-	if !isCookieNameValid(name) {
-		return nil, fmt.Errorf("sessions: invalid character in cookie name: %s", name)
-	}
-	if c, err := r.Cookie(name); err == nil {
-		// check if there is a corresponding session in MemoryStore.
-		s.mutex.RLock()
-		session, ok := s.sessions[c.Value]
-		s.mutex.RUnlock()
-		if ok {
-			session.data.IsNew = false
-			return session, nil
-		}
-	}
-	// cookie doesn't exist or no corresponding session stored in MemoryStore
-	// generate a new session.
-	return s.New(name)
-}
-
-// New Returns a new session and saves it into underlying store
-func (s *MemoryStore) New(name string) (*Session, error) {
-	id, err := s.generateID()
-	if err != nil {
-		return nil, err
-	}
-	session := NewSession(name, id, *s.options)
-	// saves session into underlying store
-	s.mutex.Lock()
-	s.sessions[session.data.ID] = session
-	s.mutex.Unlock()
-	return session, nil
-}
-
-// generateID Generate an unique ID for session
-func (s *MemoryStore) generateID() (string, error) {
-	// generate an unique random string as session ID
-	for {
-		if id, err := GenerateRandomString(s.idLength); err != nil {
-			return "", err
-		} else {
-			s.mutex.RLock()
-			_, ok := s.sessions[id]
-			s.mutex.RUnlock()
-			if !ok {
-				return id, nil
-			}
-		}
-	}
-}
-
-// gc periodically removes expired sessions
-func (s *MemoryStore) gc() {
-	ticker := time.NewTicker(s.gcInterval)
-	defer ticker.Stop()
-	for range ticker.C {
-		s.mutex.Lock()
-		for k, session := range s.sessions {
-			if session.data.Expiry <= time.Now().Unix() {
-				delete(s.sessions, k)
-			}
-		}
-		s.mutex.Unlock()
-	}
+	return &baseStore{
+		options:  opts,
+		idLength: idLen,
+	}, nil
 }

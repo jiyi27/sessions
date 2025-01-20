@@ -18,7 +18,7 @@ func setupRedisClient() *redis.Client {
 
 func TestRedisStore_Get(t *testing.T) {
 	client := setupRedisClient()
-	store := NewRedisStore(client)
+	store, _ := NewRedisStore(client)
 
 	sessionID := "test_session_id"
 	sessionData := `{"ID":"test_session_id","Name":"test_session","Values":{}}`
@@ -36,7 +36,7 @@ func TestRedisStore_Get(t *testing.T) {
 
 func TestRedisStore_New(t *testing.T) {
 	client := setupRedisClient()
-	store := NewRedisStore(client)
+	store, _ := NewRedisStore(client)
 
 	session, err := store.New("new_session")
 	assert.NoError(t, err)

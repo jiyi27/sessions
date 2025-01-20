@@ -12,50 +12,36 @@ import (
 
 // RedisStore represents a session store backed by Redis.
 type RedisStore struct {
+	*baseStore
 	client     *redis.Client
-	options    *Options
-	idLength   int
 	serializer *Serializer
 }
 
 // NewRedisStore creates a new RedisStore with the given Redis client and options.
-func NewRedisStore(client *redis.Client, options ...func(*RedisStore)) *RedisStore {
-	s := &RedisStore{
-		client: client,
-		options: &Options{
-			Path:     "/",
-			MaxAge:   86400,
-			SameSite: http.SameSiteDefaultMode,
-		},
-		idLength:   16,
+func NewRedisStore(client *redis.Client, options ...func(*RedisStore)) (Store, error) {
+	base, err := newBaseStore(defaultOptions(), 16)
+	if err != nil {
+		return nil, err
+	}
+
+	store := &RedisStore{
+		baseStore:  base,
+		client:     client,
 		serializer: &Serializer{},
 	}
 
 	for _, op := range options {
-		op(s)
+		op(store)
 	}
 
-	return s
+	return store, nil
 }
 
-//// WithIDLength sets the session ID length.
-//func WithIDLength(l int) func(*RedisStore) {
-//	return func(s *RedisStore) {
-//		s.idLength = l
-//	}
-//}
-//
-//// WithMaxAge sets the maximum age of the session.
-//func WithMaxAge(maxAge int) func(*RedisStore) {
-//	return func(s *RedisStore) {
-//		s.options.MaxAge = maxAge
-//	}
-//}
-
 // generateID generates a unique session ID.
+// TODO: 避免无限循环, 限制最大尝试次数
 func (s *RedisStore) generateID() (string, error) {
 	for {
-		id, err := GenerateRandomString(s.idLength)
+		id, err := generateRandomID(s.idLength)
 		if err != nil {
 			return "", err
 		}
@@ -119,7 +105,7 @@ func (s *RedisStore) Save(session *Session) error {
 	if err != nil {
 		return err
 	}
-	expiration := time.Duration(session.data.Options.MaxAge) * time.Second
+	expiration := session.data.Options.MaxAge * time.Second
 	return s.client.Set(context.Background(), session.data.ID, data, expiration).Err()
 }
 
